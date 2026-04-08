@@ -16,3 +16,8 @@ Cargo.lock.bak
 .vscode/
 .idea/
 *.swp
+
+# Per-session ephemera. Tracks "where we are right now" between sessions but
+# is rewritten every handoff — committing it would create churn and merge
+# noise. Read it locally; never commit. CLAUDE.md is the stable companion.
+SESSION_CONTEXT.md
