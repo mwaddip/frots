@@ -20,7 +20,7 @@
 import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js';
 import { bytesToNumberBE } from '@noble/curves/utils.js';
 
-import { intoEvenY, scalarBaseMul } from './point.ts';
+import { hasEvenY, intoEvenY, scalarBaseMul } from './point.ts';
 
 const Fn = secp256k1.Point.Fn;
 type Point = typeof secp256k1.Point.BASE;
@@ -85,4 +85,52 @@ export function applyDkgTweakToPubkey(pubkey: Point): Point {
   const tG = scalarBaseMul(t);
   const evenP = intoEvenY(pubkey);
   return evenP.add(tG);
+}
+
+/**
+ * `applyDkgTweakToShare` — composite that mirrors `Tweak::KeyPackage::tweak(None)`.
+ *
+ * Per `frost-secp256k1-tr/src/lib.rs:776-793`, the operative key material a
+ * participant holds after `post_dkg` is computed by applying both the BIP340
+ * even-y normalization (which negates ALL three KeyPackage components when
+ * the AGGREGATE verifying key has odd y) and the BIP341 unspendable tweak:
+ *
+ *     let t = tweak(&self.verifying_key().to_element(), merkle_root);
+ *     let tp = ProjectivePoint::GENERATOR * t;
+ *     let key_package = self.into_even_y(None);
+ *     let verifying_key   = kp.verifying_key.to_element() + tp;
+ *     let signing_share   = kp.signing_share.to_scalar()  + t;
+ *     let verifying_share = kp.verifying_share.to_element() + tp;
+ *
+ * `KeyPackage::into_even_y` (lib.rs:660-678) checks the AGGREGATE verifying
+ * key's parity and, if odd, negates the verifying key, the signing share,
+ * AND the verifying share — all atomically. This preserves both the
+ * `s·G == vs` invariant (signing share to its public counterpart) AND the
+ * `Σ vs == vk` invariant (sum of verifying shares to the aggregate).
+ *
+ * The TS port takes the three RAW share components as separate arguments
+ * (since we don't yet have a `KeyPackage` struct in Step 3) and returns the
+ * tweaked trio. `aggregateVerifyingKey` is the pre-tweak aggregate (the
+ * `Σ_j commitment_j[0]` sum); its parity drives the negation choice.
+ */
+export function applyDkgTweakToShare(
+  rawSigningShare: bigint,
+  rawVerifyingShare: Point,
+  aggregateVerifyingKey: Point,
+): { signingShare: bigint; verifyingShare: Point; verifyingKey: Point } {
+  const t = tapTweakScalar(aggregateVerifyingKey);
+  const tp = scalarBaseMul(t);
+
+  // Aggregate parity drives all three negations atomically (mirrors
+  // KeyPackage::into_even_y at lib.rs:660-678).
+  const isEven = hasEvenY(aggregateVerifyingKey);
+  const evenSs = isEven ? rawSigningShare : Fn.neg(rawSigningShare);
+  const evenVs = isEven ? rawVerifyingShare : rawVerifyingShare.negate();
+  const evenAggregate = intoEvenY(aggregateVerifyingKey);
+
+  return {
+    signingShare: Fn.add(evenSs, t),
+    verifyingShare: evenVs.add(tp),
+    verifyingKey: evenAggregate.add(tp),
+  };
 }
