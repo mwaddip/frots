@@ -1,0 +1,24 @@
+{
+  "name": "frots",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure-TypeScript port of FROST (RFC 9591) for secp256k1 + BIP340/BIP341 Taproot, validated byte-for-byte against Zcash Foundation's audited frost-secp256k1-tr Rust crate.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "2.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
