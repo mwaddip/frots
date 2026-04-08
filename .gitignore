@@ -1,0 +1,18 @@
+# External reference sources cloned for spec-by-example reading.
+# Not part of this project — never committed.
+.reference/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Rust (for fixture-gen/ later)
+target/
+Cargo.lock.bak
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
