@@ -272,7 +272,7 @@ BIP340 mandates that R and the verifying key always have **even** y-coordinates.
 | `pre_sign` | lib.rs:308-325 | KeyPackage is `into_even_y(None)`'d before round 2 signing. |
 | `pre_aggregate` | lib.rs:329-346 | PublicKeyPackage is `into_even_y(None)`'d before aggregation. |
 | `pre_verify` | lib.rs:350-362 | Both VerifyingKey and Signature are `into_even_y(None)`'d before verification. |
-| `generate_nonce` | lib.rs:365-378 | Random `k`, then if `(k·G).y` is odd, return `(-k, -R)`. **Nonces always have even-y commitments.** |
+| `generate_nonce` | lib.rs:365-378 | Random `k`, then if `(k·G).y` is odd, return `(-k, -R)`. ⚠️ **NOT on the FROST round-1 commit path** — see clarification below. |
 | `compute_signature_share` | lib.rs:395-416 | If the **group** commitment (sum of all signers' R) has odd y, negate the local nonces before signing. The aggregate parity is what matters, not the individual one. |
 | `verify_share` | lib.rs:420-443 | Symmetric: negate the group commitment share if the aggregate has odd y. |
 
@@ -281,6 +281,16 @@ BIP340 mandates that R and the verifying key always have **even** y-coordinates.
 2. **Aggregate-conditional negation** (sites 6-7): once R values are summed across signers, the sum may end up with odd y; in that case every signer's local nonce gets negated to compensate. This is the standard "make-all-of-FROST-output-a-BIP340-sig" trick.
 
 The TS port must replicate all seven negation points exactly. **Missing any of them means signatures will fail verification half the time** (whichever half corresponds to the odd-y case).
+
+### 6.1 · ⚠️ Clarification on `generate_nonce` (site #5) — added in Step 3
+
+The `Ciphersuite::generate_nonce` override at lib.rs:365-378 IS implemented in `frost-secp256k1-tr` and DOES negate `(k, R)` when `R.y` is odd, **but it is NOT on the FROST round-1 commit path that produces our fixture data.** Round 1 commit (`round1::commit` → `Nonce::new` → `nonce_generate_from_random_bytes` at frost-core/round1.rs:77-90) is a *direct H3 call*: `nonce_scalar = H3(random_bytes(32) || signing_share.serialize())`, with **no parity dance**. The recorded scalar in the fixture is exactly H3 of that preimage, even when the resulting commitment point has odd y. `generate_nonce` is used by the synchronous standalone signing path (`single_sign`), not by the FROST distributed flow.
+
+**Empirical confirmation:** in `secp256k1_tr_2of3_dealer.json`, participant 2's `hiding_nonce_commitment` starts with `0378120b…` (odd y), and the recorded `hiding_nonce` scalar matches `H3(random || share)` byte-for-byte (10/10 H3 byte-equality assertions in `tests/h3.test.ts` passed in Step 3). If round 1 had been negating on parity, the recorded scalar would have been the negation of `H3(random || share)` instead.
+
+The aggregate-level parity dance still applies via sites #6 / #7 (`compute_signature_share` / `verify_share`) — it just happens at *signing time*, not nonce-generation time. The TS port must:
+- NOT apply parity normalization in `Nonce::new`-equivalent code
+- DO apply aggregate-level parity normalization in `compute_signature_share`-equivalent code
 
 ---
 
@@ -489,12 +499,13 @@ Subagent identified these in `frost-secp256k1-tr/tests/helpers/`:
 ## 12 · Open items
 
 1. ✅ **`Scalar::random` byte count** — RESOLVED in Step 1: 32 bytes per call, rejection sampling.
-2. ⚠️ **`hash_to_field` k parameter exact value used by k256** — still asserting k=128 (RFC 9380 default for secp256k1's 256-bit field). To be empirically locked when the TS hash-to-scalar test is run against the Rust fixtures in Step 3.
-3. The `Tweak` trait impls for KeyPackage and PublicKeyPackage (lib.rs:751-792 per the subagent report) were not directly read — read them when implementing the TS post_dkg.
-4. The exact body of `into_even_y` (lib.rs:615-660 per the subagent report) was also not directly read — read when implementing the BIP340 normalization in TS.
+2. ✅ **`hash_to_field` k parameter exact value used by k256** — RESOLVED empirically in Step 3: noble's `hash_to_field` with `k=128` matches Rust's `hash_to_field::<ExpandMsgXmd<Sha256>, Scalar>` byte-for-byte across 10 independent H3 input pairs (5 hiding nonces + 5 binding nonces from both `-tr` dealer fixtures). See `tests/h3.test.ts`.
+3. ✅ **`Tweak` trait impls for KeyPackage and PublicKeyPackage** — RESOLVED in Step 3: read directly from lib.rs:751-792. Pipeline for `PublicKeyPackage::tweak(None)` is `Q = into_even_y(P) + t·G` where `t = tap_tweak_scalar(x_only(P))` (computed from the *original* P, not the normalized one — but mathematically equivalent because x is invariant under negation). For `KeyPackage::tweak(None)`, the same `t` and `tp = t·G` are applied to all three components after the aggregate's `into_even_y` may have negated everything: `vk' = even(vk) + tp`, `ss' = even(ss) + t`, `vs' = even(vs) + tp`. Result Q is NOT itself even-y normalized after the tweak; downstream `pre_*` sites do that on the way in. Validated by `tests/dkg-tweak.test.ts` (2 byte-equality assertions on the verifying-key half).
+4. ✅ **Exact body of `into_even_y`** — RESOLVED in Step 3: read directly from lib.rs:615-743. The `EvenY` trait has six impls (`PublicKeyPackage`, `KeyPackage`, `VerifyingKey`, `GroupCommitment`, `Signature`, `SigningKey`); each is the same pattern: check `verifying_key.to_affine().y_is_odd()`, and if odd, negate the point AND any associated secret scalars (since `-(s·G) = (-s)·G` preserves the `s·G == vs` and `Σ vs == vk` invariants). The TS port `intoEvenY` in `src/point.ts` mirrors the `VerifyingKey` variant; the more elaborate `KeyPackage` / `PublicKeyPackage` variants will land as separate composites when DKG part 3 is ported.
 5. ⚠️ **NEW (from §5.1.5 added in Step 1):** `frost-secp256k1-tr` overrides `post_dkg` but NOT `post_generate`. Dealer flow returns an UNTWEAKED key. This is a behavior asymmetry between the two flows that the TS port must replicate exactly. Documented above; no further action needed beyond keeping the two flows separate in the TS API.
+6. ⚠️ **NEW (from §6.1 added in Step 3):** `Ciphersuite::generate_nonce` (site #5 in §6's table) is NOT on the FROST round-1 commit path. Round 1 uses `nonce_generate_from_random_bytes` which is a direct `H3(random || share)` with no parity dance — confirmed empirically by 10/10 H3 byte-equality assertions passing on nonces whose commitments include odd-y points. The TS port must NOT apply parity normalization in the round-1 nonce primitive; aggregate-level parity is handled at sign time via sites #6 / #7. See §6.1 for the empirical confirmation.
 
-Item 2 is the only remaining unknown and it's empirically verifiable as the very first byte-equality check in Step 3 (compare noble's `hash_to_field` output against a Rust-generated H1/H3 output for one known input).
+All §12 items are now either resolved or documented as known asymmetries.
 
 ---
 
