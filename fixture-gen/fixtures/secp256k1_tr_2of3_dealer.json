@@ -1,0 +1,110 @@
+{
+  "config": {
+    "MAX_PARTICIPANTS": "3",
+    "MIN_PARTICIPANTS": "2",
+    "NUM_PARTICIPANTS": "2",
+    "name": "FROST(secp256k1, SHA-256-TR)",
+    "group": "secp256k1",
+    "hash": "SHA-256",
+    "flow": "dealer",
+    "tweak_applied": false,
+    "rng_seed_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "inputs": {
+    "participant_list": [
+      1,
+      2
+    ],
+    "verifying_key_key": "039b8327d929a0e45285c04d19c9fffbee065c266b701972922d807228120e43f3",
+    "message": "66726f747320666978747572652d67656e20326f6633206465616c6572202d7472",
+    "participant_shares": [
+      {
+        "identifier": 1,
+        "participant_share": "50fa3a29f248861db7824b250c5f07616d66f5c6065dedfbabec47a96e2f320c",
+        "verifying_share": "02bdffd2a2a2e9c5d9c5ac9735a313ce9a4af5d0f07bd97fadb77fe0785fb139dc"
+      },
+      {
+        "identifier": 2,
+        "participant_share": "2b3b93a6439fceab2ea72b64c537519a1cfbd1d36c2deedcafa19f8650e75651",
+        "verifying_share": "023933e9220fde0c2d912b871824561a44b69f1031110fe1a7929ea6d655d1c042"
+      },
+      {
+        "identifier": 3,
+        "participant_share": "057ced2294f71738a5cc0ba47e0f9bd2cc90ade0d1fdefbdb356f763339f7a96",
+        "verifying_share": "02497a2e6efb99c70e50e162772462dc0b66c3c01a757048130730df7136d4be1e"
+      }
+    ]
+  },
+  "round_one_outputs": {
+    "outputs": [
+      {
+        "identifier": 1,
+        "hiding_nonce_randomness": "9f07e7be5551387a98ba977c732d080dcb0f29a048e3656912c6533e32ee7aed",
+        "binding_nonce_randomness": "29b721769ce64e43d57133b074d839d531ed1f28510afb45ace10a1f4b794d6f",
+        "hiding_nonce": "06fd11ff19739de2869182fa760e01f398ab699cb169c739f3a43c9cd6a6910e",
+        "binding_nonce": "90829a1b69c575810f44bcca2be291a7b443e5dafd3014f19fafb9b2ffeb3eb0",
+        "hiding_nonce_commitment": "02b1e6b5377656f5c342527f37f3f89874e5c570ac69ee40d0ddf31e2085b8cd68",
+        "binding_nonce_commitment": "02c518cdc75f92852466e830a3bb97666f0bafd1dfdb1df426314e5c15139ff7d0"
+      },
+      {
+        "identifier": 2,
+        "hiding_nonce_randomness": "2d09a0e663266ce1ae7ed1081968a0758e718e997bd362c6b0c34634a9a0b35d",
+        "binding_nonce_randomness": "012737681f7b5d0f281e3afde458bc1e73d2d313c9cf94c05ff3716240a248f2",
+        "hiding_nonce": "05af9e6747199bc0c297ef7c8f2cf2d4821647feacc63ce33d68fcfb0a4a6107",
+        "binding_nonce": "c7bcd6ed76c19e6b55b4a62cde7c95be67d5b0f9a0072a54d88ab117463fd22a",
+        "hiding_nonce_commitment": "0378120b6e32d0b949b5be04e2413d61954c261fe5a5deaea03bd1415ac781eadf",
+        "binding_nonce_commitment": "02ddcc6e6a4775ef4e392f264850ad7cd849fd845cb7b00551eb35bc52303355de"
+      }
+    ]
+  },
+  "round_two_outputs": {
+    "outputs": [
+      {
+        "identifier": 1,
+        "sig_share": "f8b3f4a602924d834d47a9281178024e48edd220c3658c71b2623ef05ca84c72"
+      },
+      {
+        "identifier": 2,
+        "sig_share": "2cfbb81c06349317af71fbd4eb0875b8c7cde759e138c5c3fa086a024bdfdbbb"
+      }
+    ]
+  },
+  "final_output": {
+    "sig": "26145d218761f87fee96b23393326eab92ac38586bc5ee2fe5072baef97b1a6925afacc208c6e09afcb9a4fcfc807808560cdc93f555b1f9ec984a65d851e6ec"
+  },
+  "rng_log": [
+    {
+      "seq": 0,
+      "label": "dealer.signing_key",
+      "len": 32,
+      "bytes_hex": "76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7"
+    },
+    {
+      "seq": 1,
+      "len": 32,
+      "bytes_hex": "da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586"
+    },
+    {
+      "seq": 2,
+      "label": "round1.commit.p1.hiding_nonce_randomness",
+      "len": 32,
+      "bytes_hex": "9f07e7be5551387a98ba977c732d080dcb0f29a048e3656912c6533e32ee7aed"
+    },
+    {
+      "seq": 3,
+      "len": 32,
+      "bytes_hex": "29b721769ce64e43d57133b074d839d531ed1f28510afb45ace10a1f4b794d6f"
+    },
+    {
+      "seq": 4,
+      "label": "round1.commit.p2.hiding_nonce_randomness",
+      "len": 32,
+      "bytes_hex": "2d09a0e663266ce1ae7ed1081968a0758e718e997bd362c6b0c34634a9a0b35d"
+    },
+    {
+      "seq": 5,
+      "len": 32,
+      "bytes_hex": "012737681f7b5d0f281e3afde458bc1e73d2d313c9cf94c05ff3716240a248f2"
+    }
+  ]
+}

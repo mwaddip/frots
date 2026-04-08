@@ -219,6 +219,21 @@ fn tweak<T: AsRef<[u8]>>(public_key: &Element, merkle_root: Option<T>) -> Scalar
 - This is exactly the BIP341 `taproot_tweak_pubkey` formula
 - **noble/curves equivalent:** `Pointk1.Fn.create(bytesToNumberBE(schnorr.utils.taggedHash('TapTweak', pk_x_bytes, ...maybe_merkle_root)))`
 
+### 5.1.5 · ⚠️ Dealer mode does NOT apply the tweak (post_generate is no-op)
+
+`frost-core` defines two distinct post-keygen hooks on the `Ciphersuite` trait (`frost-core/src/traits.rs:450-470`):
+- `post_dkg(KeyPackage, PublicKeyPackage)` — called from `frost-core/src/keys/dkg.rs:657` at the end of `keys::dkg::part3`
+- `post_generate(BTreeMap<Identifier, SecretShare>, PublicKeyPackage)` — called from `frost-core/src/keys.rs:576` at the end of `keys::generate_with_dealer` / `keys::split`
+
+**`frost-secp256k1-tr` overrides `post_dkg` (lib.rs:478) but does NOT override `post_generate`.** Dealer-mode key generation therefore returns the *raw, untweaked* aggregate verifying key. Empirically confirmed by `fixture-gen`: a 2-of-3 dealer ceremony with seed `[0u8; 32]` produces a verifying key starting with `0x03` (odd y), which is what the raw `secret_key·G` happens to be — the tweak has not been applied.
+
+**Implications for the TS port:**
+- A TS implementation of dealer mode that mirrors `generate_with_dealer` should NOT apply the tap tweak post-keygen. The verifying key returned is the raw aggregate.
+- BIP340 even-y normalization still happens at sign / verify time via `pre_sign` / `pre_aggregate` / `pre_verify` (lib.rs:308-362), which call `into_even_y(None)` on the operative key. This is parity normalization only — NOT the tap tweak.
+- A TS implementation of DKG mode (mirroring `keys::dkg::part1/2/3`) MUST apply the tap tweak post-keygen to match `post_dkg`.
+- These two flows are therefore not interchangeable from a "what's the operative pubkey?" point of view: the dealer flow's pubkey is `Q = sk·G` (then parity-normalized at sign time); the DKG flow's pubkey is `Q = (sk·G) + t·G` where `t = tap_tweak(x_only(sk·G))`.
+- For Otzi's vault, which uses DKG, this means the operative pubkey is the tweaked one. Stick with DKG semantics for the actual deployment.
+
 ### 5.2 · post_dkg — the BIP341 unspendable-tweak rogue-key defense
 ```rust
 // lib.rs:478-491
@@ -310,10 +325,16 @@ fn challenge<C>(identifier, verifying_key, R) -> Challenge<C> {
 
 The Step 1 Rust fixture harness is going to record the consumed random bytes alongside each protocol output. The order matters — the TS replay shim feeds them out in the same order.
 
-### DKG `part1` (per participant)
-1. **Secret key**: `Scalar::random(rng)` — 32 bytes consumed (k256's `Scalar::random` is 64 bytes from `rng.fill_bytes`, then mod-n reduction; we'll need to verify the exact byte count when building the harness — ⚠️ **OPEN: confirm whether `Scalar::random` consumes 32 or 64 bytes from the underlying RngCore**)
-2. **Polynomial coefficients**: `(min_signers - 1)` calls to `Scalar::random(rng)` — same byte count per call as above
-3. **Proof-of-knowledge nonce**: `random_nonzero::<Self, R>(rng)` — loops `Scalar::random` until non-zero (always one iteration in practice; rejection probability is ~2^-256)
+### Dealer `keys::generate_with_dealer` (called once by the trusted dealer)
+1. **Secret key**: `SigningKey::new(rng)` → `Scalar::random(rng)` — 32 bytes (one `fill_bytes` call). **Empirically confirmed by `fixture-gen` against k256 0.13.x: rejection sampling, 32 bytes per call, not 64.**
+2. **Polynomial coefficients**: `generate_coefficients(min_signers - 1, rng)` → `(min_signers - 1)` calls to `Scalar::random(rng)`, 32 bytes each
+3. No PoK in dealer mode (the dealer is trusted)
+4. Total for (t, n) = (2, 3) dealer: **64 bytes** = 32 secret + 32 × 1 coefficient. For (3, 5): 96 bytes = 32 secret + 32 × 2 coefficients.
+
+### DKG `keys::dkg::part1` (per participant)
+1. **Secret key**: `Scalar::random(rng)` — 32 bytes
+2. **Polynomial coefficients**: `(min_signers - 1)` calls — 32 bytes each
+3. **Proof-of-knowledge nonce**: `random_nonzero::<Self, R>(rng)` — loops `Scalar::random` until non-zero (always one iteration in practice; rejection probability is ~2^-256), 32 bytes
 
 ### Round 1 commit (per participant)
 - **Hiding nonce**: `Nonce::new` → `rng.fill_bytes(&mut [0u8; 32])` — exactly 32 bytes
@@ -339,7 +360,7 @@ The Step 1 Rust fixture harness is going to record the consumed random bytes alo
 ### post_dkg / tweak
 - **No RNG.** Deterministic.
 
-⚠️ **OPEN for Step 1 fixture harness:** the exact `Scalar::random` byte count needs to be measured by instrumenting the RngCore, not assumed. Will record the actual fill_bytes call sites and cumulative byte counts in the fixture JSON.
+**RESOLVED in Step 1 (2026-04-08, fixture-gen empirical run):** k256 `Scalar::random` consumes **32 bytes per call** via a single `fill_bytes(&mut [0u8; 32])`, using rejection sampling (not 64-byte uniform). The rng_log for `secp256k1_tr_2of3_dealer.json` shows exactly this: 2 calls × 32 bytes for dealer keygen, then 4 calls × 32 bytes for the 2-signer round1 (2 signers × 2 nonces). No additional fill_bytes calls anywhere in the dealer or signing flow.
 
 ---
 
@@ -465,14 +486,15 @@ Subagent identified these in `frost-secp256k1-tr/tests/helpers/`:
 
 ---
 
-## 12 · Things to confirm in Step 1 (open questions)
+## 12 · Open items
 
-1. ⚠️ **`Scalar::random` byte count** — does it consume 32 bytes (and reject mod-bias) or 64 bytes (uniform sample)? Need to instrument the RngCore in the fixture harness to record the exact `fill_bytes` call lengths.
-2. ⚠️ **`hash_to_field` k parameter exact value used by k256** — I'm asserting k=128 (RFC 9380 default for secp256k1 256-bit field). Should be verified by inspecting k256's `ExpandMsgXmd<Sha256>` impl OR by comparing the noble hash_to_field output against the Rust output for one fixed input. The latter is the empirical test we'll run as the very first byte-equality check in Step 3.
+1. ✅ **`Scalar::random` byte count** — RESOLVED in Step 1: 32 bytes per call, rejection sampling.
+2. ⚠️ **`hash_to_field` k parameter exact value used by k256** — still asserting k=128 (RFC 9380 default for secp256k1's 256-bit field). To be empirically locked when the TS hash-to-scalar test is run against the Rust fixtures in Step 3.
 3. The `Tweak` trait impls for KeyPackage and PublicKeyPackage (lib.rs:751-792 per the subagent report) were not directly read — read them when implementing the TS post_dkg.
 4. The exact body of `into_even_y` (lib.rs:615-660 per the subagent report) was also not directly read — read when implementing the BIP340 normalization in TS.
+5. ⚠️ **NEW (from §5.1.5 added in Step 1):** `frost-secp256k1-tr` overrides `post_dkg` but NOT `post_generate`. Dealer flow returns an UNTWEAKED key. This is a behavior asymmetry between the two flows that the TS port must replicate exactly. Documented above; no further action needed beyond keeping the two flows separate in the TS API.
 
-These are not blockers for Step 1 (build the Rust harness) but they ARE blockers for Step 3 primitive 1 (hash-to-scalar test green) — specifically, item 2 must be answered before claiming a hash-to-scalar match is meaningful.
+Item 2 is the only remaining unknown and it's empirically verifiable as the very first byte-equality check in Step 3 (compare noble's `hash_to_field` output against a Rust-generated H1/H3 output for one known input).
 
 ---
 
@@ -499,5 +521,5 @@ These are not blockers for Step 1 (build the Rust harness) but they ARE blockers
 1. CONTEXT_STRING is `"FROST-secp256k1-SHA256-TR-v1"` (28 bytes UTF-8). DSTs are CONTEXT || suffix with NO separator.
 2. H1, H3, HDKG, HID, hash_randomizer use RFC 9380 ExpandMsgXmd-SHA256 hash-to-field with k=128, mod n. **noble/curves' `hash_to_field` is the drop-in.** H2 is the BIP340 tagged-hash oddball — `schnorr.utils.taggedHash('BIP0340/challenge', preimage)` then mod-n. H4/H5 are raw SHA256 over `CONTEXT || suffix || msg`.
 3. Scalars: 32-byte big-endian mod n. Points: 33-byte SEC1 compressed (or x-only 32 bytes for BIP340 contexts). Signatures: 64 bytes = R_x || z, R always even-y.
-4. The post-DKG taproot tweak is **mandatory** and **automatic** in the Rust crate (`post_dkg` lib.rs:478-491). It's `Q = P + hashTapTweak(bytes(P))·G` with no merkle root — the BIP-341 unspendable-script-path commitment that defends against rogue-script post-hoc attacks. The TS port MUST replicate this; skipping it produces a non-compliant key.
+4. The post-DKG taproot tweak is **mandatory** and **automatic** in the **DKG** flow (`post_dkg` lib.rs:478-491). It's `Q = P + hashTapTweak(bytes(P))·G` with no merkle root — the BIP-341 unspendable-script-path commitment that defends against rogue-script post-hoc attacks. The TS port's DKG path MUST replicate this. **However, the dealer flow (`generate_with_dealer`) does NOT apply the tweak** because `frost-secp256k1-tr` doesn't override `post_generate` — see §5.1.5. Dealer-mode TS code must match this asymmetry.
 5. BIP340 even-y is enforced at seven negation sites (lib.rs:297-443). Per-key normalization (4 sites) + aggregate-conditional negation (2 sites) + nonce pre-normalization (1 site). Missing any one breaks half the signatures.

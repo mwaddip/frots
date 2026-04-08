@@ -1,0 +1,30 @@
+[package]
+name = "fixture-gen"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic FROST fixture generator for cross-validating the frots TS port against frost-secp256k1-tr"
+publish = false
+
+# Standalone package — not a member of any parent workspace.
+# (Prevents Cargo from trying to attach this to the cloned ZF frost workspace.)
+[workspace]
+
+[dependencies]
+# Path deps on the cloned Zcash Foundation frost reference.
+# Requires .reference/frost/ to be cloned (see project README / .gitignore).
+frost-secp256k1-tr = { path = "../.reference/frost/frost-secp256k1-tr", features = ["serde", "serialization"] }
+frost-secp256k1    = { path = "../.reference/frost/frost-secp256k1",    features = ["serde", "serialization"] }
+frost-core         = { path = "../.reference/frost/frost-core",         features = ["serde", "serialization", "internals"] }
+
+# RNG: ChaCha20Rng is the seedable, deterministic CSPRNG behind our RecordingRng wrapper.
+rand_core   = "0.6"
+rand_chacha = "0.3"
+
+# Output
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex        = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
