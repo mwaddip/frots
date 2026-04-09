@@ -39,7 +39,7 @@ import {
   hexToBytes,
   loadDealerFixture,
 } from '../src/index.ts';
-import { H3 } from '../src/hash.ts';
+import { H3 } from '../src/secp256k1-tr/hash.ts';
 
 const Fn = secp256k1.Point.Fn;
 

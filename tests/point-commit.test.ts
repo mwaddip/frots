@@ -28,7 +28,7 @@ import {
   hexToBytes,
   loadDealerFixture,
 } from '../src/index.ts';
-import { scalarBaseMul } from '../src/point.ts';
+import { scalarBaseMul } from '../src/secp256k1-tr/point.ts';
 
 const Fn = secp256k1.Point.Fn;
 

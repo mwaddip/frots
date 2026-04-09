@@ -34,11 +34,11 @@ import {
   type RoundOneOutput,
   type SigningIntermediates,
 } from '../src/index.ts';
-import { intoEvenY } from '../src/point.ts';
+import { intoEvenY } from '../src/secp256k1-tr/point.ts';
 import {
   computeBindingFactorList,
   type SigningCommitment,
-} from '../src/sign.ts';
+} from '../src/secp256k1-tr/sign.ts';
 
 const Fn = secp256k1.Point.Fn;
 const Point = secp256k1.Point;

@@ -34,7 +34,7 @@ import {
   loadDealerFixture,
   type DealerFixture,
 } from '../src/index.ts';
-import { finalizeKeygen, type SecretShare } from '../src/keys.ts';
+import { finalizeKeygen, type SecretShare } from '../src/secp256k1-tr/keys.ts';
 
 const Fn = secp256k1.Point.Fn;
 

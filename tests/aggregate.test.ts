@@ -43,7 +43,7 @@ import {
 import {
   aggregate,
   type SigningCommitment,
-} from '../src/sign.ts';
+} from '../src/secp256k1-tr/sign.ts';
 
 const Fn = secp256k1.Point.Fn;
 

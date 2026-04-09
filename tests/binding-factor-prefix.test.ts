@@ -43,8 +43,8 @@ import {
   loadDkgFixture,
   type RoundOneOutput,
 } from '../src/index.ts';
-import { intoEvenY } from '../src/point.ts';
-import { bindingFactorInputPrefix, type SigningCommitment } from '../src/sign.ts';
+import { intoEvenY } from '../src/secp256k1-tr/point.ts';
+import { bindingFactorInputPrefix, type SigningCommitment } from '../src/secp256k1-tr/sign.ts';
 
 const Point = secp256k1.Point;
 

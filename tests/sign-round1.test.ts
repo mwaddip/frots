@@ -36,8 +36,8 @@ import {
   type DealerFixture,
   type ParticipantShare,
 } from '../src/index.ts';
-import { finalizeKeygen, type KeyPackage, type SecretShare } from '../src/keys.ts';
-import { signRound1 } from '../src/sign.ts';
+import { finalizeKeygen, type KeyPackage, type SecretShare } from '../src/secp256k1-tr/keys.ts';
+import { signRound1 } from '../src/secp256k1-tr/sign.ts';
 
 const Fn = secp256k1.Point.Fn;
 

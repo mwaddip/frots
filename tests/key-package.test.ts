@@ -21,7 +21,7 @@ import {
   loadDealerFixture,
   type ParticipantShare,
 } from '../src/index.ts';
-import type { KeyPackage, PublicKeyPackage } from '../src/keys.ts';
+import type { KeyPackage, PublicKeyPackage } from '../src/secp256k1-tr/keys.ts';
 
 const Fn = secp256k1.Point.Fn;
 

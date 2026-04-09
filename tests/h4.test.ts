@@ -26,7 +26,7 @@ import {
   loadDealerFixture,
   loadDkgFixture,
 } from '../src/index.ts';
-import { H4 } from '../src/hash.ts';
+import { H4 } from '../src/secp256k1-tr/hash.ts';
 
 function loadIntermediatesAndMessage(name: string): {
   message: Uint8Array;

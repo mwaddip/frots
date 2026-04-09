@@ -45,8 +45,8 @@ import {
   hexToBytes,
   loadDkgFixture,
 } from '../src/index.ts';
-import { scalarBaseMul } from '../src/point.ts';
-import { dkgProofOfKnowledgeChallenge } from '../src/dkg.ts';
+import { scalarBaseMul } from '../src/secp256k1-tr/point.ts';
+import { dkgProofOfKnowledgeChallenge } from '../src/secp256k1-tr/dkg.ts';
 
 const Fn = secp256k1.Point.Fn;
 const Point = secp256k1.Point;
@@ -72,7 +72,7 @@ describe('DKG proof-of-knowledge — z·G == R + c·vk', () => {
           const R = Point.fromBytes(hexToBytes(party.proof_of_knowledge_R));
           const z = Fn.fromBytes(hexToBytes(party.proof_of_knowledge_z));
 
-          const c = dkgProofOfKnowledgeChallenge(party.identifier, vk, R);
+          const c = dkgProofOfKnowledgeChallenge(BigInt(party.identifier), vk, R);
 
           const lhs = scalarBaseMul(z);
           const rhs = R.add(vk.multiply(c));

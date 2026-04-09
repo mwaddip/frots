@@ -1,55 +1,23 @@
 /**
- * `frots` — pure-TypeScript port of FROST(secp256k1, SHA-256-TR).
+ * `frots` — pure-TypeScript port of FROST (RFC 9591).
  *
- * Step 4 public API (dealer flow): the high-level wrappers below let a
- * consumer drive the FROST signing pipeline end-to-end without touching
- * the lower-level primitives in src/sign.ts / src/keys.ts directly:
+ * Top-level barrel that re-exports the secp256k1-tr ciphersuite as the
+ * default, plus test helpers for internal byte-equality tests.
  *
- *     finalizeKeygen   →  build a per-party KeyPackage from a dealer-issued
- *                         SecretShare (runs VSS verification)
- *     signRound1       →  derive private nonces + public commitments
- *     signRound2       →  produce a per-signer SignatureShare
- *     signAggregate    →  combine SignatureShares into a 64-byte BIP340
- *                         signature, with bundled BIP340 verification
- *     verifySignature  →  standalone public-side BIP340 verification
- *
- * The DKG-flow wrappers (dkgRound1, dkgRound2, finalizeKeygen for DKG)
- * are pending — see PLAN.md Step 4 sub-step 6.
- *
- * The fixture-loading and RNG-replay exports below the line are test
- * helpers, kept on the public surface so external test harnesses (and
- * the project's own byte-equality tests) can reach them.
+ * Consumers should import from 'frots' or 'frots/secp256k1-tr'.
  */
 
 // =============================================================================
-// Step 4 — public signing API
+// Public API — re-exported from the secp256k1-tr ciphersuite
 // =============================================================================
 
-export type {
-  KeyPackage,
-  PublicKeyPackage,
-  SecretShare,
-} from './keys.ts';
-
-export { finalizeKeygen } from './keys.ts';
-
-export type {
-  Rng,
-  Round1Output,
-  SignatureShare,
-  SigningCommitment,
-  SigningNonces,
-} from './sign.ts';
-
-export {
-  signAggregate,
-  signRound1,
-  signRound2,
-  verifySignature,
-} from './sign.ts';
+export * from './secp256k1-tr/index.ts';
 
 // =============================================================================
-// Fixture-loading and RNG replay (test helpers)
+// Test helpers (fixture loading, RNG replay, hex utils)
+// These are NOT part of the published package API — they exist for the
+// project's own byte-equality test suite and reference fixture data on
+// disk that does not ship with the npm package.
 // =============================================================================
 
 export type {

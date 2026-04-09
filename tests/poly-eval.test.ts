@@ -37,7 +37,7 @@ import {
   hexToBytes,
   loadDkgFixture,
 } from '../src/index.ts';
-import { evalPoly } from '../src/poly.ts';
+import { evalPoly } from '../src/secp256k1-tr/poly.ts';
 
 const Fn = secp256k1.Point.Fn;
 

@@ -38,7 +38,7 @@ import {
   loadDkgFixture,
   type SigningIntermediates,
 } from '../src/index.ts';
-import { deriveInterpolatingValue } from '../src/lagrange.ts';
+import { deriveInterpolatingValue } from '../src/secp256k1-tr/lagrange.ts';
 
 const Fn = secp256k1.Point.Fn;
 

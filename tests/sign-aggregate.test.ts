@@ -42,7 +42,7 @@ import {
   type KeyPackage,
   type PublicKeyPackage,
   type SecretShare,
-} from '../src/keys.ts';
+} from '../src/secp256k1-tr/keys.ts';
 import {
   signAggregate,
   signRound1,
@@ -51,7 +51,7 @@ import {
   type SignatureShare,
   type SigningCommitment,
   type SigningNonces,
-} from '../src/sign.ts';
+} from '../src/secp256k1-tr/sign.ts';
 
 const Fn = secp256k1.Point.Fn;
 
@@ -152,17 +152,18 @@ describe('signAggregate — full high-level pipeline reproduces final_output.sig
     });
   }
 
-  it('signAggregate throws when one signature share is tampered', () => {
+  it('signAggregate identifies the cheater when one share is tampered', () => {
     const fx = loadDealerFixture('secp256k1_tr_2of3_dealer');
     const { signatureShares, commitments, publicKeyPackage, message } = runFullCeremony(fx);
 
     // Tamper with the first share — flip the scalar by adding 1.
+    const culpritId = signatureShares[0]!.identifier;
     const tampered: SignatureShare[] = signatureShares.map((ss, i) =>
       i === 0 ? { identifier: ss.identifier, share: Fn.add(ss.share, 1n) } : ss,
     );
 
     expect(() =>
       signAggregate(tampered, message, commitments, publicKeyPackage),
-    ).toThrow(/failed BIP340 verification/);
+    ).toThrow(new RegExp(`invalid share.*${culpritId}`));
   });
 });

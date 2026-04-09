@@ -35,8 +35,8 @@ import {
   hexToBytes,
   loadDkgFixture,
 } from '../src/index.ts';
-import { evalPoly, evalPolyOnPoints } from '../src/poly.ts';
-import { applyDkgTweakToPubkey, applyDkgTweakToShare } from '../src/tweak.ts';
+import { evalPoly, evalPolyOnPoints } from '../src/secp256k1-tr/poly.ts';
+import { applyDkgTweakToPubkey, applyDkgTweakToShare } from '../src/secp256k1-tr/tweak.ts';
 
 const Point = secp256k1.Point;
 const Fn = Point.Fn;

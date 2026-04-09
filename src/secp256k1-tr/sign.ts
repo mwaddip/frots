@@ -710,13 +710,101 @@ export function signAggregate(
   );
 
   if (!verifySignature(sig, message, publicKeyPackage.verifyingKey)) {
+    // Cheater detection: identify which signer(s) submitted invalid shares.
+    const culprits = detectCheaters(
+      sortedCommitments,
+      message,
+      publicKeyPackage,
+      sharesMap,
+    );
+    if (culprits.length > 0) {
+      throw new Error(
+        `signAggregate: failed BIP340 verification — invalid share(s) from signer(s): ${culprits.join(', ')}`,
+      );
+    }
     throw new Error(
       'signAggregate: assembled signature failed BIP340 verification — ' +
-        'one or more signers may have submitted a bad share, or the signing set ' +
-        'is inconsistent with the PublicKeyPackage. Cheater-detection retry is ' +
-        'not yet implemented; inspect signature shares manually to identify the culprit.',
+        'all individual shares verified but the aggregate is invalid',
     );
   }
 
   return sig;
+}
+
+/**
+ * `detectCheaters` — scan each signature share to find the culprit(s) when
+ * the assembled signature fails BIP340 verification.
+ *
+ * Mirrors `frost-core/src/lib.rs:688-742`'s `detect_cheater`. For each
+ * signer `i`, verifies:
+ *
+ *     z_i · G == R_i + (c · lambda_i) · VS_i
+ *
+ * where:
+ *   - `R_i = D_i + rho_i · E_i` (the per-signer commitment share)
+ *   - If the aggregate group commitment `R` has odd y, `R_i` is negated
+ *     (the `-tr` parity dance from `Ciphersuite::verify_share`)
+ *   - `c = H2(R_x || vk_x || message)` (the Schnorr challenge)
+ *   - `lambda_i` is the Lagrange coefficient for signer `i`
+ *   - `VS_i` is the operative (even-y-normalized) verifying share
+ *
+ * Returns the list of identifier(s) whose shares failed verification.
+ */
+function detectCheaters(
+  commitments: readonly SigningCommitment[],
+  message: Uint8Array,
+  publicKeyPackage: PublicKeyPackage,
+  sharesMap: ReadonlyMap<number, bigint>,
+): number[] {
+  // Recompute intermediates (this is a failure path, so perf is not critical).
+  const vkPoint = secp256k1.Point.fromBytes(publicKeyPackage.verifyingKey);
+  const operativeVk = intoEvenY(vkPoint);
+  const operativeVkBytes = operativeVk.toBytes(true);
+
+  const bindingFactors = computeBindingFactorList(operativeVkBytes, message, commitments);
+  const R = computeGroupCommitment(commitments, bindingFactors);
+  const c = challenge(R, operativeVk, message);
+
+  const signerIds = commitments.map((sc) => BigInt(sc.identifier));
+  const groupRHasEvenY = hasEvenY(R);
+
+  const culprits: number[] = [];
+
+  for (const sc of commitments) {
+    const z_i = sharesMap.get(sc.identifier);
+    if (z_i === undefined) continue;
+
+    // Per-signer commitment share: R_i = D_i + rho_i · E_i
+    const rho_i = bindingFactors.get(sc.identifier)!;
+    const D_i = secp256k1.Point.fromBytes(sc.hiding);
+    const E_i = secp256k1.Point.fromBytes(sc.binding);
+    let R_i = D_i.add(E_i.multiply(rho_i));
+
+    // -tr parity dance: negate R_i if the aggregate R has odd y.
+    if (!groupRHasEvenY) {
+      R_i = R_i.negate();
+    }
+
+    // Lagrange coefficient.
+    const lambda_i = deriveInterpolatingValue(signerIds, BigInt(sc.identifier));
+
+    // Operative verifying share (even-y-normalized like the aggregate vk).
+    const rawVs = publicKeyPackage.verifyingShares.get(BigInt(sc.identifier));
+    if (rawVs === undefined) {
+      culprits.push(sc.identifier);
+      continue;
+    }
+    const vsPoint = secp256k1.Point.fromBytes(rawVs);
+    const operativeVs = hasEvenY(vkPoint) ? vsPoint : vsPoint.negate();
+
+    // Check: z_i · G == R_i + (c · lambda_i) · VS_i
+    const lhs = scalarBaseMul(z_i);
+    const rhs = R_i.add(operativeVs.multiply(Fn.mul(c, lambda_i)));
+
+    if (!lhs.equals(rhs)) {
+      culprits.push(sc.identifier);
+    }
+  }
+
+  return culprits;
 }

@@ -17,7 +17,9 @@ Cargo.lock.bak
 .idea/
 *.swp
 
-# Per-session ephemera. Tracks "where we are right now" between sessions but
-# is rewritten every handoff — committing it would create churn and merge
-# noise. Read it locally; never commit. CLAUDE.md is the stable companion.
+# Development artifacts — local session/planning files, not part of the library
 SESSION_CONTEXT.md
+NEXT_SESSION_PROMPT.md
+CLAUDE.md
+PLAN.md
+RUST_REFERENCE_NOTES.md

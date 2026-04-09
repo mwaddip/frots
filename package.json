@@ -1,13 +1,38 @@
 {
   "name": "frots",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "Pure-TypeScript port of FROST (RFC 9591) for secp256k1 + BIP340/BIP341 Taproot, validated byte-for-byte against Zcash Foundation's audited frost-secp256k1-tr Rust crate.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mwaddip/frots"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/secp256k1-tr/index.js",
+      "types": "./dist/secp256k1-tr/index.d.ts"
+    },
+    "./secp256k1-tr": {
+      "import": "./dist/secp256k1-tr/index.js",
+      "types": "./dist/secp256k1-tr/index.d.ts"
+    }
+  },
+  "main": "./dist/secp256k1-tr/index.js",
+  "types": "./dist/secp256k1-tr/index.d.ts",
+  "files": [
+    "dist",
+    "src/secp256k1-tr",
+    "API.md",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@noble/curves": "2.0.1",
@@ -15,10 +40,23 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "keywords": [
+    "frost",
+    "threshold-signatures",
+    "secp256k1",
+    "schnorr",
+    "bip340",
+    "bip341",
+    "taproot",
+    "bitcoin",
+    "dkg",
+    "mpc"
+  ]
 }

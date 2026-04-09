@@ -35,7 +35,7 @@ import {
   loadDealerFixture,
   loadDkgFixture,
 } from '../src/index.ts';
-import { challenge } from '../src/sign.ts';
+import { challenge } from '../src/secp256k1-tr/sign.ts';
 
 const Fn = secp256k1.Point.Fn;
 const Point = secp256k1.Point;

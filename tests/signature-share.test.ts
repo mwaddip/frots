@@ -60,15 +60,15 @@ import {
   loadDkgFixture,
   type RoundOneOutput,
 } from '../src/index.ts';
-import { intoEvenY } from '../src/point.ts';
+import { intoEvenY } from '../src/secp256k1-tr/point.ts';
 import {
   computeBindingFactorList,
   computeGroupCommitment,
   computeSignatureShare,
   challenge as computeChallenge,
   type SigningCommitment,
-} from '../src/sign.ts';
-import { deriveInterpolatingValue } from '../src/lagrange.ts';
+} from '../src/secp256k1-tr/sign.ts';
+import { deriveInterpolatingValue } from '../src/secp256k1-tr/lagrange.ts';
 
 const Fn = secp256k1.Point.Fn;
 const Point = secp256k1.Point;
