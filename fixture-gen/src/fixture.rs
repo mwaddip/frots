@@ -25,6 +25,12 @@ pub struct Fixture {
     pub inputs: Inputs,
     pub round_one_outputs: RoundOneOutputs,
     pub round_two_outputs: RoundTwoOutputs,
+    /// Captured intermediates from `round2::sign`'s internal pipeline:
+    /// binding factors, Lagrange coefficients, the group commitment R, and
+    /// the H2 challenge c. Lets the TS port test each sub-primitive against
+    /// the Rust reference in isolation rather than only checking the final
+    /// `sig_share` end-to-end.
+    pub signing_intermediates: SigningIntermediates,
     pub final_output: FinalOutput,
     pub rng_log: Vec<RngCall>,
 }
@@ -129,6 +135,55 @@ pub struct FinalOutput {
 }
 
 // =====================================================================
+// Signing-flow intermediates
+// =====================================================================
+
+/// Captured intermediate values from the inside of `round2::sign` and
+/// `frost::aggregate`. Each field shadows a value computed by the Rust
+/// reference, exposed via the `internals` feature on `frost-core`.
+///
+/// The TS port walks the same pipeline (binding factor preimages → H1 →
+/// rho_i, group commitment, Lagrange interpolation → lambda_i, H2 → c,
+/// `compute_signature_share`) and asserts byte-for-byte equivalence
+/// against these recorded values, isolating each sub-primitive.
+#[derive(Debug, Serialize)]
+pub struct SigningIntermediates {
+    /// The shared per-session prefix for every binding-factor preimage:
+    /// `verifying_key.serialize() || H4(message) || H5(encode_group_commitments(commitments))`.
+    /// Per signer, the full preimage is `prefix || identifier.serialize()`.
+    /// Hex-encoded. (Length depends on the encoded commitments size, which
+    /// scales linearly with the number of signers.)
+    pub binding_factor_input_prefix: String,
+    /// Per-signer binding factor `rho_i = H1(prefix || identifier.serialize())`.
+    pub binding_factors: Vec<BindingFactorEntry>,
+    /// Per-signer Lagrange coefficient `lambda_i = derive_interpolating_value(signer_set, identifier)`.
+    pub lagrange_coefficients: Vec<LagrangeCoefficientEntry>,
+    /// The aggregate group commitment `R = Σ (D_i + rho_i · E_i)` over the
+    /// signer set, 33-byte SEC1 compressed (hex). This is the operative R
+    /// before any BIP340 even-y normalization — `compute_signature_share`
+    /// negates the local nonces if `R.y` is odd.
+    pub group_commitment: String,
+    /// The Schnorr challenge `c = H2(R_x || vk_x || message)`, 32-byte
+    /// big-endian scalar (hex). The `-tr` ciphersuite hashes only the
+    /// x-coordinates of R and vk per BIP340.
+    pub challenge: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BindingFactorEntry {
+    pub identifier: u16,
+    /// 32-byte big-endian scalar (hex)
+    pub rho: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LagrangeCoefficientEntry {
+    pub identifier: u16,
+    /// 32-byte big-endian scalar (hex)
+    pub lambda: String,
+}
+
+// =====================================================================
 // DKG fixture types (no-dealer flow)
 // =====================================================================
 
@@ -143,6 +198,8 @@ pub struct DkgFixture {
     pub dkg: DkgData,
     pub round_one_outputs: RoundOneOutputs,
     pub round_two_outputs: RoundTwoOutputs,
+    /// Captured signing-flow intermediates — see [`Fixture::signing_intermediates`].
+    pub signing_intermediates: SigningIntermediates,
     pub final_output: FinalOutput,
     pub rng_log: Vec<RngCall>,
 }

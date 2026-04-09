@@ -93,6 +93,39 @@
       }
     ]
   },
+  "signing_intermediates": {
+    "binding_factor_input_prefix": "039b8327d929a0e45285c04d19c9fffbee065c266b701972922d807228120e43f3dcd720877a0a063158eab64bb3a7f3811d2cf252a5796ffae340bcc7750f15214b2d7f68fba6b33731d1da5ce5ce4b7eab203d7697bd188d80e06a07ffd21836",
+    "binding_factors": [
+      {
+        "identifier": 1,
+        "rho": "bf18260770c2a69d9f137d98e6b2380d3d7ee39e08f1332db65a5b09b5b6882f"
+      },
+      {
+        "identifier": 2,
+        "rho": "03e281ae371372e6f7e7918487d5eeeb91dfe6bd18d464573b7b98648e9e2317"
+      },
+      {
+        "identifier": 3,
+        "rho": "c3253d4f10cfdb688e1e9b773b070acbf1a7f53791e86358af0e2aa7b8430216"
+      }
+    ],
+    "lagrange_coefficients": [
+      {
+        "identifier": 1,
+        "lambda": "0000000000000000000000000000000000000000000000000000000000000003"
+      },
+      {
+        "identifier": 2,
+        "lambda": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd036413e"
+      },
+      {
+        "identifier": 3,
+        "lambda": "0000000000000000000000000000000000000000000000000000000000000001"
+      }
+    ],
+    "group_commitment": "02151a0f0ae7366156fe946f3ee31f4f9bc22589317934afbc241190adf0d6196e",
+    "challenge": "73a580037447b1ecd5a1d7c760df0d5b17048620dbd5a95fe4ef084117687102"
+  },
   "final_output": {
     "sig": "e3cca807e20035249b73e57a583b8d08ea396a741ba2837020e3846a6544d1dee8f3adf849db4ec3493ef92b34d8ebe0b4c2d3e5e6dcb042ce3d19642db28636"
   },

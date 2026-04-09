@@ -8,6 +8,7 @@
  */
 
 export type {
+  BindingFactorEntry,
   Config,
   DealerFixture,
   DealerInputs,
@@ -21,12 +22,14 @@ export type {
   FinalOutput,
   Fixture,
   FixtureName,
+  LagrangeCoefficientEntry,
   ParticipantShare,
   RngCall,
   RoundOneOutput,
   RoundOneOutputs,
   RoundTwoOutput,
   RoundTwoOutputs,
+  SigningIntermediates,
 } from './fixture.ts';
 
 export {

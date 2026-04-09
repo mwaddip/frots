@@ -166,6 +166,31 @@
       }
     ]
   },
+  "signing_intermediates": {
+    "binding_factor_input_prefix": "028f203e5baaa20dbcbaa3b9a0e97652dc08784eb7ffcb13b640b3b8d734edcb30c9fb35f1b2c113e92387b0774b0de9f6edd88e39fdc02871b3e71ea12279ce350797a6b41e12a7a24696336b41a8bc5bb67b1e4527e52472da084be555bd391b",
+    "binding_factors": [
+      {
+        "identifier": 1,
+        "rho": "22a76873b316a545596345231e5cfc12dc6d1eee86610614c40537eeb03eb2e9"
+      },
+      {
+        "identifier": 2,
+        "rho": "f82c5d6275258232050bd817247b4b9cf5c2b69be596a64d4594f95e6ee37066"
+      }
+    ],
+    "lagrange_coefficients": [
+      {
+        "identifier": 1,
+        "lambda": "0000000000000000000000000000000000000000000000000000000000000002"
+      },
+      {
+        "identifier": 2,
+        "lambda": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140"
+      }
+    ],
+    "group_commitment": "03ce06ea35fbb559d108086d4ab6cc0638d9d036de310574a25c5e7fc71e5bd7d0",
+    "challenge": "13053d629f5cd6c477cd6d4fe653c965fd5eff696a6444644885fb0e481d1986"
+  },
   "final_output": {
     "sig": "ce06ea35fbb559d108086d4ab6cc0638d9d036de310574a25c5e7fc71e5bd7d0c5d3fe69f50268a0ac54286eb6d4ec232e8c96b9a8520e005fe223e1c11210a3"
   },

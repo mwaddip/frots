@@ -86,6 +86,59 @@ export interface FinalOutput {
 }
 
 // =============================================================================
+// Signing-flow intermediates (captured from inside `round2::sign`)
+// =============================================================================
+
+/**
+ * Captured intermediate values from the inside of `round2::sign` and
+ * `frost::aggregate`. Each field shadows a value computed by the Rust
+ * reference, exposed via the `internals` feature on `frost-core`. The TS port
+ * walks the same pipeline (binding factor preimages → H1, group commitment,
+ * Lagrange interpolation, H2 challenge, then `compute_signature_share`) and
+ * asserts byte-for-byte equivalence against these recorded values.
+ */
+export interface SigningIntermediates {
+  /**
+   * The shared per-session prefix for every binding-factor preimage:
+   * `verifying_key.serialize() || H4(message) || H5(encode_group_commitments(commitments))`.
+   * Per signer, the full preimage is `prefix || identifier.serialize()`.
+   * Hex-encoded; length depends on the encoded commitments size, which scales
+   * linearly with the number of signers.
+   */
+  readonly binding_factor_input_prefix: string;
+  /** Per-signer binding factor `rho_i = H1(prefix || identifier.serialize())`. */
+  readonly binding_factors: readonly BindingFactorEntry[];
+  /**
+   * Per-signer Lagrange coefficient `lambda_i` (the no-x variant of
+   * `compute_lagrange_coefficient` over the signing set, evaluated at 0).
+   */
+  readonly lagrange_coefficients: readonly LagrangeCoefficientEntry[];
+  /**
+   * Aggregate group commitment `R = Σ (D_i + rho_i · E_i)` over the signer
+   * set, 33-byte SEC1 compressed. NOT yet BIP340-normalized — `compute_signature_share`
+   * negates the local nonces if `R.y` is odd.
+   */
+  readonly group_commitment: string;
+  /**
+   * Schnorr challenge `c = H2(R_x || vk_x || message)`, 32-byte big-endian
+   * scalar. The `-tr` ciphersuite hashes only the x-coordinates per BIP340.
+   */
+  readonly challenge: string;
+}
+
+export interface BindingFactorEntry {
+  readonly identifier: number;
+  /** 32-byte big-endian scalar. Hex-encoded. */
+  readonly rho: string;
+}
+
+export interface LagrangeCoefficientEntry {
+  readonly identifier: number;
+  /** 32-byte big-endian scalar. Hex-encoded. */
+  readonly lambda: string;
+}
+
+// =============================================================================
 // Dealer fixture
 // =============================================================================
 
@@ -114,6 +167,7 @@ export interface DealerFixture {
   readonly inputs: DealerInputs;
   readonly round_one_outputs: RoundOneOutputs;
   readonly round_two_outputs: RoundTwoOutputs;
+  readonly signing_intermediates: SigningIntermediates;
   readonly final_output: FinalOutput;
   readonly rng_log: readonly RngCall[];
 }
@@ -181,6 +235,7 @@ export interface DkgFixture {
   readonly dkg: DkgData;
   readonly round_one_outputs: RoundOneOutputs;
   readonly round_two_outputs: RoundTwoOutputs;
+  readonly signing_intermediates: SigningIntermediates;
   readonly final_output: FinalOutput;
   readonly rng_log: readonly RngCall[];
 }

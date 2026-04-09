@@ -3,16 +3,105 @@
 
 use std::collections::BTreeMap;
 
+use frost_core::{
+    compute_binding_factor_list, compute_group_commitment, derive_interpolating_value,
+    Ciphersuite,
+};
 use frost_secp256k1_tr::{
     self as frost_tr,
     keys::{dkg, IdentifierList, KeyPackage, PublicKeyPackage},
-    round1, round2, Group, Identifier, Secp256K1Group, SigningPackage,
+    round1, round2, Field, Group, Identifier, Secp256K1Group, Secp256K1Sha256TR, SigningPackage,
 };
 use rand_chacha::ChaCha20Rng;
 use rand_core::SeedableRng;
 
 use crate::fixture::*;
 use crate::recording_rng::RecordingRng;
+
+/// Compute the intermediate values that `round2::sign` walks internally so
+/// they can be cross-checked from the TS port. Uses the `internals`-feature
+/// helpers on `frost-core` plus the ciphersuite trait method `challenge`
+/// (which is the `-tr` x-only override). Mirrors the order of operations in
+/// `frost-core/src/round2.rs::sign`.
+#[allow(non_snake_case)]
+fn capture_signing_intermediates(
+    signing_package: &SigningPackage,
+    pub_key_package: &PublicKeyPackage,
+) -> SigningIntermediates {
+    // 1. Binding factor input prefix: vk.serialize() || H4(msg) || H5(encoded_commits).
+    //    `binding_factor_preimages` returns the FULL per-signer preimages, each of
+    //    which is `prefix || identifier_serialized`. To recover the prefix we slice
+    //    one preimage and drop its trailing 32-byte identifier.
+    let preimages = signing_package
+        .binding_factor_preimages(pub_key_package.verifying_key(), &[])
+        .expect("binding_factor_preimages");
+    let first_preimage = &preimages.first().expect("at least one signer").1;
+    let prefix_len = first_preimage.len() - 32;
+    let prefix = &first_preimage[..prefix_len];
+    let binding_factor_input_prefix = hex::encode(prefix);
+
+    // 2. Per-signer binding factors via the internals helper.
+    let binding_factor_list =
+        compute_binding_factor_list::<Secp256K1Sha256TR>(signing_package, pub_key_package.verifying_key(), &[])
+            .expect("compute_binding_factor_list");
+    let mut binding_factors: Vec<BindingFactorEntry> = signing_package
+        .signing_commitments()
+        .keys()
+        .map(|id| {
+            let bf = binding_factor_list
+                .get(id)
+                .expect("binding factor for signer");
+            BindingFactorEntry {
+                identifier: identifier_as_u16(*id),
+                rho: hex::encode(bf.serialize()),
+            }
+        })
+        .collect();
+    binding_factors.sort_by_key(|e| e.identifier);
+
+    // 3. Per-signer Lagrange coefficients via derive_interpolating_value.
+    let mut lagrange_coefficients: Vec<LagrangeCoefficientEntry> = signing_package
+        .signing_commitments()
+        .keys()
+        .map(|id| {
+            let lambda = derive_interpolating_value::<Secp256K1Sha256TR>(id, signing_package)
+                .expect("derive_interpolating_value");
+            LagrangeCoefficientEntry {
+                identifier: identifier_as_u16(*id),
+                lambda: hex::encode(<<Secp256K1Group as Group>::Field>::serialize(&lambda)),
+            }
+        })
+        .collect();
+    lagrange_coefficients.sort_by_key(|e| e.identifier);
+
+    // 4. Group commitment R = Σ (D_i + rho_i · E_i).
+    let group_commitment_value =
+        compute_group_commitment::<Secp256K1Sha256TR>(signing_package, &binding_factor_list)
+            .expect("compute_group_commitment");
+    let group_commitment_hex = hex::encode(
+        Secp256K1Group::serialize(&group_commitment_value.clone().to_element())
+            .expect("group commitment ser"),
+    );
+
+    // 5. H2 challenge — uses the `-tr` x-only override on Ciphersuite::challenge.
+    let challenge_value = <Secp256K1Sha256TR as Ciphersuite>::challenge(
+        &group_commitment_value.to_element(),
+        pub_key_package.verifying_key(),
+        signing_package.message(),
+    )
+    .expect("Ciphersuite::challenge");
+    let challenge_hex = hex::encode(<<Secp256K1Group as Group>::Field>::serialize(
+        &challenge_value.to_scalar(),
+    ));
+
+    SigningIntermediates {
+        binding_factor_input_prefix,
+        binding_factors,
+        lagrange_coefficients,
+        group_commitment: group_commitment_hex,
+        challenge: challenge_hex,
+    }
+}
 
 /// Convert a default-style `Identifier` (which is just a small integer
 /// reduced into the secp256k1 scalar field) back into the original `u16`.
@@ -148,6 +237,10 @@ pub fn run_dealer_tr(min_signers: u16, max_signers: u16, seed: [u8; 32], message
         signature_shares.insert(id, share);
     }
 
+    // Capture the signing-flow intermediates that round2::sign computed internally,
+    // for cross-checking from the TS port.
+    let signing_intermediates = capture_signing_intermediates(&signing_package, &pub_key_package);
+
     // -----------------------------------------------------------------------
     // Phase 4: aggregate
     // -----------------------------------------------------------------------
@@ -213,6 +306,7 @@ pub fn run_dealer_tr(min_signers: u16, max_signers: u16, seed: [u8; 32], message
         round_two_outputs: RoundTwoOutputs {
             outputs: round_two_records,
         },
+        signing_intermediates,
         final_output: FinalOutput {
             sig: hex::encode(signature.serialize().expect("signature ser")),
         },
@@ -480,6 +574,9 @@ pub fn run_dkg_tr(min_signers: u16, max_signers: u16, seed: [u8; 32], message: &
         signature_shares.insert(id, share);
     }
 
+    // Capture the signing-flow intermediates for cross-checking from the TS port.
+    let signing_intermediates = capture_signing_intermediates(&signing_package, &pub_key_package);
+
     let signature = frost_tr::aggregate(&signing_package, &signature_shares, &pub_key_package)
         .expect("aggregate");
 
@@ -521,6 +618,7 @@ pub fn run_dkg_tr(min_signers: u16, max_signers: u16, seed: [u8; 32], message: &
         },
         round_one_outputs: RoundOneOutputs { outputs: round_one_records },
         round_two_outputs: RoundTwoOutputs { outputs: round_two_records },
+        signing_intermediates,
         final_output: FinalOutput {
             sig: hex::encode(signature.serialize().expect("signature ser")),
         },
