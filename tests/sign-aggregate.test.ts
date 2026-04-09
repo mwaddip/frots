@@ -73,10 +73,13 @@ function loadPublicKeyPackage(fx: DealerFixture): PublicKeyPackage {
   for (const ps of fx.inputs.participant_shares) {
     verifyingShares.set(BigInt(ps.identifier), hexToBytes(ps.verifying_share));
   }
+  const vk = hexToBytes(fx.inputs.verifying_key_key);
   return {
     verifyingShares,
-    verifyingKey: hexToBytes(fx.inputs.verifying_key_key),
+    verifyingKey: vk,
     minSigners: Number(fx.config.MIN_PARTICIPANTS),
+    untweakedVerifyingKey: vk,
+    untweakedVerifyingShares: verifyingShares,
   };
 }
 

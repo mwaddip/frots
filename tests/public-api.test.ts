@@ -93,10 +93,13 @@ describe('public API surface — full dealer ceremony driven via src/index.ts on
     for (const ps of fx.inputs.participant_shares) {
       verifyingShares.set(BigInt(ps.identifier), hexToBytes(ps.verifying_share));
     }
+    const vk = hexToBytes(fx.inputs.verifying_key_key);
     const publicKeyPackage: PublicKeyPackage = {
       verifyingShares,
-      verifyingKey: hexToBytes(fx.inputs.verifying_key_key),
+      verifyingKey: vk,
       minSigners,
+      untweakedVerifyingKey: vk,
+      untweakedVerifyingShares: verifyingShares,
     };
 
     const signature = signAggregate(sigShares, message, commitments, publicKeyPackage);

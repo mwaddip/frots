@@ -62,6 +62,14 @@ export interface KeyPackage {
   readonly verifyingShare: Uint8Array;
   readonly verifyingKey: Uint8Array;
   readonly minSigners: number;
+  /** Pre-tweak aggregate verifying key, 33-byte SEC1. For DKG flow this
+   *  is the raw aggregate before `post_dkg`; for dealer flow it equals
+   *  `verifyingKey` (dealer does not apply the tap tweak). */
+  readonly untweakedVerifyingKey: Uint8Array;
+  /** Pre-tweak per-party signing share. */
+  readonly untweakedSigningShare: bigint;
+  /** Pre-tweak per-party verifying share, 33-byte SEC1. */
+  readonly untweakedVerifyingShare: Uint8Array;
 }
 
 /**
@@ -86,6 +94,10 @@ export interface PublicKeyPackage {
   readonly verifyingShares: ReadonlyMap<bigint, Uint8Array>;
   readonly verifyingKey: Uint8Array;
   readonly minSigners: number;
+  /** Pre-tweak aggregate verifying key, 33-byte SEC1. */
+  readonly untweakedVerifyingKey: Uint8Array;
+  /** Pre-tweak per-party verifying shares, 33-byte SEC1. */
+  readonly untweakedVerifyingShares: ReadonlyMap<bigint, Uint8Array>;
 }
 
 /**
@@ -180,5 +192,9 @@ export function finalizeKeygen(secretShare: SecretShare): KeyPackage {
     verifyingShare,
     verifyingKey,
     minSigners: commitment.length,
+    // Dealer flow does not apply the tap tweak, so untweaked = tweaked.
+    untweakedVerifyingKey: verifyingKey,
+    untweakedSigningShare: signingShare,
+    untweakedVerifyingShare: verifyingShare,
   };
 }

@@ -78,6 +78,22 @@ const signature = signAggregate(
 // signature is a 64-byte Uint8Array — a standard BIP340 Schnorr signature
 ```
 
+### Tweaked vs Untweaked Signing
+
+After DKG, `keyPackage` and `publicKeyPackage` carry both the BIP341 Taproot-tweaked key and the raw untweaked key. By default, signing uses the tweaked key (for Taproot key-path spends). Pass `{ tweaked: false }` for script-path inputs or any scenario requiring the raw aggregate key:
+
+```ts
+// Key-path spend (tweaked, default):
+const share = signRound2(kp, nonces, message, commitments);
+const sig = signAggregate([...shares], message, commitments, publicKeyPackage);
+verifySignature(sig, message, publicKeyPackage.verifyingKey); // true
+
+// Script-path spend (untweaked):
+const share = signRound2(kp, nonces, message, commitments, { tweaked: false });
+const sig = signAggregate([...shares], message, commitments, publicKeyPackage, { tweaked: false });
+verifySignature(sig, message, publicKeyPackage.untweakedVerifyingKey); // true
+```
+
 ### Dealer Flow (Trusted Dealer)
 
 ```ts

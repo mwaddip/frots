@@ -574,11 +574,18 @@ export function signRound2(
   nonces: SigningNonces,
   message: Uint8Array,
   allCommitments: readonly SigningCommitment[],
+  options?: { tweaked?: boolean },
 ): SignatureShare {
+  const tweaked = options?.tweaked ?? true;
+
+  // Select key material based on tweaked/untweaked mode.
+  const vkBytes = tweaked ? keyPackage.verifyingKey : keyPackage.untweakedVerifyingKey;
+  const ss = tweaked ? keyPackage.signingShare : keyPackage.untweakedSigningShare;
+
   // 1. Parse the raw verifying key. operativeVk is used for hashing into
   //    the binding factor preimage and the challenge; vkPoint (raw) is
   //    handed to computeSignatureShare which runs its own parity dance.
-  const vkPoint = secp256k1.Point.fromBytes(keyPackage.verifyingKey);
+  const vkPoint = secp256k1.Point.fromBytes(vkBytes);
   const operativeVkPoint = intoEvenY(vkPoint);
   const operativeVkBytes = operativeVkPoint.toBytes(true);
 
@@ -618,7 +625,7 @@ export function signRound2(
     verifyingKey: vkPoint,
     hidingNonce: nonces.hidingNonce,
     bindingNonce: nonces.bindingNonce,
-    signingShare: keyPackage.signingShare,
+    signingShare: ss,
     bindingFactor: rho,
     lagrange: lambda,
     challenge: c,
@@ -690,7 +697,14 @@ export function signAggregate(
   message: Uint8Array,
   commitments: readonly SigningCommitment[],
   publicKeyPackage: PublicKeyPackage,
+  options?: { tweaked?: boolean },
 ): Uint8Array {
+  const tweaked = options?.tweaked ?? true;
+
+  // Select key material based on tweaked/untweaked mode.
+  const vk = tweaked ? publicKeyPackage.verifyingKey : publicKeyPackage.untweakedVerifyingKey;
+  const vs = tweaked ? publicKeyPackage.verifyingShares : publicKeyPackage.untweakedVerifyingShares;
+
   // Build the Map<number, bigint> the low-level aggregate expects.
   const sharesMap = new Map<number, bigint>();
   for (const ss of signatureShares) {
@@ -705,16 +719,17 @@ export function signAggregate(
   const sig = aggregate(
     sortedCommitments,
     message,
-    publicKeyPackage.verifyingKey,
+    vk,
     sharesMap,
   );
 
-  if (!verifySignature(sig, message, publicKeyPackage.verifyingKey)) {
+  if (!verifySignature(sig, message, vk)) {
     // Cheater detection: identify which signer(s) submitted invalid shares.
+    const cheaterPkg: PublicKeyPackage = { ...publicKeyPackage, verifyingKey: vk, verifyingShares: vs };
     const culprits = detectCheaters(
       sortedCommitments,
       message,
-      publicKeyPackage,
+      cheaterPkg,
       sharesMap,
     );
     if (culprits.length > 0) {

@@ -425,6 +425,14 @@ export function dkgFinalize(
     preTweakVerifyingShares.set(id, evalPolyOnPoints(groupCommitment, id));
   }
 
+  // --- Capture pre-tweak values ---
+  const untweakedVkBytes = aggregateVk.toBytes(true);
+  const myPreTweakVs = preTweakVerifyingShares.get(secretPackage.identifier)!;
+  const untweakedVerifyingShares = new Map<bigint, Uint8Array>();
+  for (const [id, vs] of preTweakVerifyingShares) {
+    untweakedVerifyingShares.set(id, vs.toBytes(true));
+  }
+
   // --- Step 5: Post-DKG tap tweak ---
   // Mirrors `Ciphersuite::post_dkg` (lib.rs:478-491) which calls
   // `KeyPackage::tweak(None)` and `PublicKeyPackage::tweak(None)`.
@@ -441,7 +449,6 @@ export function dkgFinalize(
   const evenSs = isEven ? signingShare : Fn.neg(signingShare);
   const postTweakSs = Fn.add(evenSs, tweakT);
 
-  const myPreTweakVs = preTweakVerifyingShares.get(secretPackage.identifier)!;
   const evenMyVs = isEven ? myPreTweakVs : myPreTweakVs.negate();
   const postTweakMyVs = evenMyVs.add(tp);
 
@@ -459,11 +466,16 @@ export function dkgFinalize(
       verifyingShare: postTweakMyVs.toBytes(true),
       verifyingKey: postTweakVkBytes,
       minSigners: secretPackage.minSigners,
+      untweakedVerifyingKey: untweakedVkBytes,
+      untweakedSigningShare: signingShare,
+      untweakedVerifyingShare: myPreTweakVs.toBytes(true),
     },
     publicKeyPackage: {
       verifyingShares: postTweakVerifyingShares,
       verifyingKey: postTweakVkBytes,
       minSigners: secretPackage.minSigners,
+      untweakedVerifyingKey: untweakedVkBytes,
+      untweakedVerifyingShares,
     },
   };
 }

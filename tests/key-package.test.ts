@@ -37,13 +37,21 @@ describe('KeyPackage interface — shape smoke test against dealer fixtures', ()
       // forthcoming `finalizeKeygen` will return — but built by hand here
       // to lock the type, not the construction logic.
       const packages: KeyPackage[] = fx.inputs.participant_shares.map(
-        (share: ParticipantShare): KeyPackage => ({
-          identifier: BigInt(share.identifier),
-          signingShare: Fn.fromBytes(hexToBytes(share.participant_share)),
-          verifyingShare: hexToBytes(share.verifying_share),
-          verifyingKey,
-          minSigners,
-        }),
+        (share: ParticipantShare): KeyPackage => {
+          const ss = Fn.fromBytes(hexToBytes(share.participant_share));
+          const vs = hexToBytes(share.verifying_share);
+          return {
+            identifier: BigInt(share.identifier),
+            signingShare: ss,
+            verifyingShare: vs,
+            verifyingKey,
+            minSigners,
+            // Dealer flow: untweaked = tweaked (no tap tweak applied).
+            untweakedVerifyingKey: verifyingKey,
+            untweakedSigningShare: ss,
+            untweakedVerifyingShare: vs,
+          };
+        },
       );
 
       expect(packages.length).toBe(fx.inputs.participant_shares.length);
@@ -87,7 +95,13 @@ describe('PublicKeyPackage interface — shape smoke test against dealer fixture
         verifyingShares.set(BigInt(share.identifier), hexToBytes(share.verifying_share));
       }
 
-      const pkp: PublicKeyPackage = { verifyingShares, verifyingKey, minSigners };
+      const pkp: PublicKeyPackage = {
+        verifyingShares,
+        verifyingKey,
+        minSigners,
+        untweakedVerifyingKey: verifyingKey,
+        untweakedVerifyingShares: verifyingShares,
+      };
 
       expect(pkp.verifyingShares.size).toBe(fx.inputs.participant_shares.length);
       for (const [id, vs] of pkp.verifyingShares) {

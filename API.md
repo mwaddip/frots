@@ -75,18 +75,20 @@ Derive per-signer secret nonces and public commitments.
 - Returns `{ nonces: SigningNonces, commitments: SigningCommitment }`.
 - `nonces` are private and consumed by `signRound2`. `commitments` are broadcast.
 
-### `signRound2(keyPackage: KeyPackage, nonces: SigningNonces, message: Uint8Array, commitments: readonly SigningCommitment[]): SignatureShare`
+### `signRound2(keyPackage: KeyPackage, nonces: SigningNonces, message: Uint8Array, commitments: readonly SigningCommitment[], options?: { tweaked?: boolean }): SignatureShare`
 
 Produce a per-signer signature share.
 
 - `message` is the 32-byte message hash being signed.
 - `commitments` is the full list of all signers' round 1 commitments.
+- `options.tweaked` (default `true`): when `false`, signs under the **untweaked** aggregate key using `keyPackage.untweakedSigningShare` and `keyPackage.untweakedVerifyingKey`. Used for OPNet script-path inputs and other scenarios requiring signatures under the raw aggregate key.
 - No RNG consumption. Deterministic given inputs.
 
-### `signAggregate(signatureShares: readonly SignatureShare[], message: Uint8Array, commitments: readonly SigningCommitment[], publicKeyPackage: PublicKeyPackage): Uint8Array`
+### `signAggregate(signatureShares: readonly SignatureShare[], message: Uint8Array, commitments: readonly SigningCommitment[], publicKeyPackage: PublicKeyPackage, options?: { tweaked?: boolean }): Uint8Array`
 
 Combine signature shares into a 64-byte BIP340 Schnorr signature.
 
+- `options.tweaked` (default `true`): when `false`, aggregates under the untweaked key. All shares must have been produced with `signRound2(..., { tweaked: false })`.
 - Runs BIP340 verification internally. Throws on failure.
 - **Cheater detection:** if verification fails, scans each share individually and reports the culprit identifier(s) in the error message.
 
@@ -109,11 +111,16 @@ Per-party signing material. Produced by `finalizeKeygen` (dealer) or `dkgFinaliz
 interface KeyPackage {
   readonly identifier: bigint;
   readonly signingShare: bigint;
-  readonly verifyingShare: Uint8Array;  // 33-byte SEC1
-  readonly verifyingKey: Uint8Array;    // 33-byte SEC1 (aggregate)
+  readonly verifyingShare: Uint8Array;          // 33-byte SEC1
+  readonly verifyingKey: Uint8Array;            // 33-byte SEC1 (aggregate, post-tweak)
   readonly minSigners: number;
+  readonly untweakedVerifyingKey: Uint8Array;   // 33-byte SEC1 (aggregate, pre-tweak)
+  readonly untweakedSigningShare: bigint;
+  readonly untweakedVerifyingShare: Uint8Array; // 33-byte SEC1
 }
 ```
+
+For dealer flow, the untweaked fields equal the tweaked fields (dealer does not apply the tap tweak).
 
 ### `PublicKeyPackage`
 
@@ -121,9 +128,11 @@ Group public material. Shared by all parties and used by the coordinator.
 
 ```ts
 interface PublicKeyPackage {
-  readonly verifyingShares: ReadonlyMap<bigint, Uint8Array>;  // per-party, 33-byte SEC1
-  readonly verifyingKey: Uint8Array;                           // 33-byte SEC1 (aggregate)
+  readonly verifyingShares: ReadonlyMap<bigint, Uint8Array>;          // per-party, 33-byte SEC1 (post-tweak)
+  readonly verifyingKey: Uint8Array;                                   // 33-byte SEC1 (aggregate, post-tweak)
   readonly minSigners: number;
+  readonly untweakedVerifyingKey: Uint8Array;                          // 33-byte SEC1 (aggregate, pre-tweak)
+  readonly untweakedVerifyingShares: ReadonlyMap<bigint, Uint8Array>;  // per-party, 33-byte SEC1 (pre-tweak)
 }
 ```
 
