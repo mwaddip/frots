@@ -80,6 +80,15 @@ pub struct Inputs {
     /// the group secret to any single party).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub group_secret_key: Option<String>,
+    /// The dealer's polynomial commitment, exposed via every issued
+    /// `SecretShare`'s `commitment()` getter (every share carries the same
+    /// commitment because there is one polynomial per dealer ceremony). A
+    /// list of `t` 33-byte SEC1 compressed points (hex), where
+    /// `dealer_commitment[i] = polynomial_coefficients[i] * G`.
+    /// `dealer_commitment[0]` is the aggregate verifying key. Only present
+    /// in dealer flow.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dealer_commitment: Option<Vec<String>>,
     /// Per-participant secret shares
     pub participant_shares: Vec<ParticipantShare>,
 }

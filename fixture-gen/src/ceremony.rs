@@ -292,6 +292,22 @@ pub fn run_dealer_tr(min_signers: u16, max_signers: u16, seed: [u8; 32], message
         .collect();
     participant_shares.sort_by_key(|s| s.identifier);
 
+    // Capture the dealer's polynomial commitment from any one share — every
+    // SecretShare from a single `generate_with_dealer` call carries the SAME
+    // commitment (there is one polynomial per dealer ceremony). The TS port
+    // needs this to construct a SecretShare for `finalizeKeygen` testing,
+    // which runs VSS verification + builds the per-party KeyPackage.
+    // Mirrors the DKG flow's existing `commitment().coefficients()` pattern.
+    let dealer_commitment_hex: Vec<String> = shares
+        .values()
+        .next()
+        .expect("dealer ceremony must produce at least one share")
+        .commitment()
+        .coefficients()
+        .iter()
+        .map(|cc| hex::encode(Secp256K1Group::serialize(&cc.value()).expect("commit ser")))
+        .collect();
+
     let mut signer_ids: Vec<u16> = signers.iter().map(|id| identifier_as_u16(*id)).collect();
     signer_ids.sort();
 
@@ -319,6 +335,7 @@ pub fn run_dealer_tr(min_signers: u16, max_signers: u16, seed: [u8; 32], message
             message: hex::encode(MESSAGE),
             share_polynomial_coefficients: None, // not directly accessible from the public API
             group_secret_key: None, // ditto — would require internals access
+            dealer_commitment: Some(dealer_commitment_hex),
             participant_shares,
         },
         round_one_outputs: RoundOneOutputs {

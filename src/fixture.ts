@@ -159,6 +159,17 @@ export interface DealerInputs {
   readonly message: string;
   readonly share_polynomial_coefficients?: readonly string[];
   readonly group_secret_key?: string;
+  /**
+   * The dealer's polynomial commitment, captured from any one issued
+   * `SecretShare`'s `commitment()` getter (every share carries the same
+   * commitment because there is one polynomial per dealer ceremony). A list
+   * of `t` 33-byte SEC1 compressed points, hex-encoded, where
+   * `dealer_commitment[i] = polynomial_coefficients[i] * G` and
+   * `dealer_commitment[0]` is the aggregate verifying key. Used by
+   * `finalizeKeygen` to construct a `SecretShare` from fixture data and run
+   * VSS verification.
+   */
+  readonly dealer_commitment?: readonly string[];
   readonly participant_shares: readonly ParticipantShare[];
 }
 
