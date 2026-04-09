@@ -14,7 +14,7 @@
 
 import { secp256k1 } from '@noble/curves/secp256k1.js';
 
-import { H4, H5 } from './hash.ts';
+import { H1, H4, H5 } from './hash.ts';
 
 const Fn = secp256k1.Point.Fn;
 
@@ -98,5 +98,46 @@ export function bindingFactorInputPrefix(
   out.set(verifyingKey, 0);
   out.set(h4, verifyingKey.length);
   out.set(h5, verifyingKey.length + h4.length);
+  return out;
+}
+
+/**
+ * `computeBindingFactorList` — derive the per-signer binding factor `rho_i`
+ * for each commitment in the signing set.
+ *
+ * Mirrors `frost-core/src/lib.rs:241-260`'s `compute_binding_factor_list`:
+ *
+ *     for each (identifier, commitment) in commitments:
+ *         preimage_i = bindingFactorInputPrefix(vk, msg, commitments)
+ *                    || identifier.serialize()(32)
+ *         rho_i      = H1(preimage_i)
+ *
+ * Returns a `Map<identifier, rho>` keyed by the u16 identifier so callers
+ * can look up `rho_i` by signer id (matching the `BindingFactorList::get`
+ * shape from the Rust crate). The order of insertion follows the order of
+ * `commitments` — the caller is responsible for sorting if a deterministic
+ * iteration order is required (the binding factor scalars themselves are
+ * order-independent because the prefix is fixed and only the identifier
+ * suffix varies per signer).
+ *
+ * Composes three already-validated primitives:
+ *   - `bindingFactorInputPrefix` (validated by tests/binding-factor-prefix.test.ts)
+ *   - identifier serialization via `Fn.toBytes(BigInt(id))` (32-byte BE)
+ *   - `H1` (this is its first byte-equality validation surface)
+ */
+export function computeBindingFactorList(
+  verifyingKey: Uint8Array,
+  message: Uint8Array,
+  commitments: readonly SigningCommitment[],
+): Map<number, bigint> {
+  const prefix = bindingFactorInputPrefix(verifyingKey, message, commitments);
+  const out = new Map<number, bigint>();
+  for (const c of commitments) {
+    const idBytes = Fn.toBytes(BigInt(c.identifier));
+    const preimage = new Uint8Array(prefix.length + idBytes.length);
+    preimage.set(prefix, 0);
+    preimage.set(idBytes, prefix.length);
+    out.set(c.identifier, H1(preimage));
+  }
   return out;
 }
