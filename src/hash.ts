@@ -15,10 +15,11 @@
  */
 
 import { hash_to_field } from '@noble/curves/abstract/hash-to-curve.js';
-import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { secp256k1, schnorr } from '@noble/curves/secp256k1.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
-const N = secp256k1.Point.Fn.ORDER;
+const Fn = secp256k1.Point.Fn;
+const N = Fn.ORDER;
 
 /** FROST(secp256k1, SHA-256-TR) ciphersuite context string (lib.rs:179). */
 const CONTEXT_STRING = 'FROST-secp256k1-SHA256-TR-v1';
@@ -190,4 +191,44 @@ export function H4(msg: Uint8Array): Uint8Array {
  */
 export function H5(msg: Uint8Array): Uint8Array {
   return hashToArray('com', msg);
+}
+
+/**
+ * `H2` — FROST Schnorr challenge hash (RFC 9591 §6.5.2.2.2 / BIP340).
+ *
+ * The cryptographic-difference oddball among the FROST H_n's: every other
+ * H_n inherits from `hashToScalar` (RFC 9380 ExpandMsgXmd → mod n), but H2
+ * uses the BIP340 tagged-hash construction with a 32-byte direct reduction:
+ *
+ *     H2(m) = SHA256(SHA256("BIP0340/challenge")^2 || m)  reduced mod n
+ *
+ * Mirrors `frost-secp256k1-tr/src/lib.rs:259-263`:
+ *
+ *     fn H2(m: &[u8]) -> Scalar {
+ *         let mut tagged = tagged_hash("BIP0340/challenge");
+ *         tagged.update(m);
+ *         hasher_to_scalar(tagged)
+ *     }
+ *
+ * where `hasher_to_scalar` is `Scalar::reduce(U256::from_be_slice(&digest))`.
+ * The bias from the direct 32-byte reduction is negligible because n is
+ * within ~2⁻¹²⁸ of 2²⁵⁶.
+ *
+ * Implemented via noble's `schnorr.utils.taggedHash('BIP0340/challenge', m)`,
+ * which produces the same `SHA256(SHA256(tag)||SHA256(tag)||m)` byte-for-byte
+ * (verified by reading `secp256k1.js:92-100` and matching against the Rust
+ * `tagged_hash` at `lib.rs:194-201`). The mod-n reduction is then
+ * `Fn.create(bytesToNumberBE(digest))`.
+ *
+ * Validated by `tests/challenge.test.ts` against the captured
+ * `signing_intermediates.challenge` field in all 4 fixtures.
+ */
+export function H2(msg: Uint8Array): bigint {
+  const digest = schnorr.utils.taggedHash('BIP0340/challenge', msg);
+  // 32-byte big-endian → bigint → mod n. Mirror Rust's `Scalar::reduce`.
+  let num = 0n;
+  for (const b of digest) {
+    num = (num << 8n) | BigInt(b);
+  }
+  return Fn.create(num);
 }
