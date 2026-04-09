@@ -129,3 +129,65 @@ export function HID(msg: Uint8Array): bigint {
 export function hashRandomizer(msg: Uint8Array): bigint {
   return hashToScalar(`${CONTEXT_STRING}randomizer`, msg);
 }
+
+const CONTEXT_BYTES = new TextEncoder().encode(CONTEXT_STRING);
+
+/**
+ * `hashToArray` — raw 32-byte SHA-256 over `CONTEXT_STRING || suffix || msg`.
+ *
+ * Mirrors `frost-secp256k1-tr/src/lib.rs:159-167`'s `hash_to_array`:
+ *
+ *     fn hash_to_array(inputs: &[&[u8]]) -> [u8; 32] {
+ *         let mut h = Sha256::new();
+ *         for i in inputs { h.update(i); }
+ *         let mut output = [0u8; 32];
+ *         output.copy_from_slice(h.finalize().as_ref());
+ *         output
+ *     }
+ *
+ * H4 and H5 are the only callers, both passing `[CONTEXT_STRING.as_bytes(),
+ * suffix.as_bytes(), msg]`. There is **no scalar reduction** — the raw 32-byte
+ * digest is the output. (Contrast with `hashToScalar`, which feeds the digest
+ * through ExpandMsgXmd and reduces mod n.)
+ */
+function hashToArray(suffix: string, msg: Uint8Array): Uint8Array {
+  const suffixBytes = new TextEncoder().encode(suffix);
+  const buf = new Uint8Array(CONTEXT_BYTES.length + suffixBytes.length + msg.length);
+  buf.set(CONTEXT_BYTES, 0);
+  buf.set(suffixBytes, CONTEXT_BYTES.length);
+  buf.set(msg, CONTEXT_BYTES.length + suffixBytes.length);
+  return sha256(buf);
+}
+
+/**
+ * `H4` — FROST message hash (RFC 9591 §6.5.2.2.4).
+ *
+ * `lib.rs:275-277`: `hash_to_array(&[CONTEXT_STRING.as_bytes(), b"msg", m])`.
+ * 32-byte SHA-256 over `"FROST-secp256k1-SHA256-TR-v1msg" || message`, with
+ * NO scalar reduction. Used by `compute_binding_factor_list` to fold the
+ * message into a fixed-length 32-byte slot in the binding-factor preimage.
+ *
+ * Validated by `tests/h4.test.ts` against bytes `[33:65]` of the captured
+ * `binding_factor_input_prefix` field in all 4 fixtures.
+ */
+export function H4(msg: Uint8Array): Uint8Array {
+  return hashToArray('msg', msg);
+}
+
+/**
+ * `H5` — FROST commitment-list hash (RFC 9591 §6.5.2.2.5).
+ *
+ * `lib.rs:282-284`: `hash_to_array(&[CONTEXT_STRING.as_bytes(), b"com", m])`.
+ * 32-byte SHA-256 over `"FROST-secp256k1-SHA256-TR-v1com" || encoded_commits`,
+ * with NO scalar reduction. Used by `compute_binding_factor_list` to fold
+ * the variable-length encoded group commitments into a fixed-length 32-byte
+ * slot in the binding-factor preimage.
+ *
+ * The input is the byte string produced by `encode_group_commitments`
+ * (`round1.rs:401-413`): `for each signer (sorted by id): id_serialized(32) ||
+ * hiding_serialized(33) || binding_serialized(33)`. Validated indirectly via
+ * `tests/binding-factor-prefix.test.ts`.
+ */
+export function H5(msg: Uint8Array): Uint8Array {
+  return hashToArray('com', msg);
+}
