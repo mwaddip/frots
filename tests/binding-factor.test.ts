@@ -34,12 +34,14 @@ import {
   type RoundOneOutput,
   type SigningIntermediates,
 } from '../src/index.ts';
+import { intoEvenY } from '../src/point.ts';
 import {
   computeBindingFactorList,
   type SigningCommitment,
 } from '../src/sign.ts';
 
 const Fn = secp256k1.Point.Fn;
+const Point = secp256k1.Point;
 
 interface Loaded {
   verifyingKey: Uint8Array;
@@ -59,8 +61,12 @@ function loadCommitments(name: string): Loaded {
     }),
   );
   commitments.sort((a, b) => a.identifier - b.identifier);
+  // Apply pre_sign even-y normalization to vk before passing to
+  // computeBindingFactorList — the Rust signing flow does this in pre_sign
+  // before compute_binding_factor_list (frost-core/round2.rs:145-151).
+  const vkPoint = Point.fromBytes(hexToBytes(fx.inputs.verifying_key_key));
   return {
-    verifyingKey: hexToBytes(fx.inputs.verifying_key_key),
+    verifyingKey: intoEvenY(vkPoint).toBytes(true),
     message: hexToBytes(fx.inputs.message),
     commitments,
     intermediates: fx.signing_intermediates,

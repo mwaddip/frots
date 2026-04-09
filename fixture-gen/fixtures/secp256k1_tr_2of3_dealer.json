@@ -70,15 +70,15 @@
     ]
   },
   "signing_intermediates": {
-    "binding_factor_input_prefix": "039b8327d929a0e45285c04d19c9fffbee065c266b701972922d807228120e43f311d79d75becd6edc85fab857ffeb67b5d4a3af369d6160bab12053d9fd03a1ffc2abfa4f6f9d822b41d76943f7b0301525499e8181c2f4348f6017428785d932",
+    "binding_factor_input_prefix": "029b8327d929a0e45285c04d19c9fffbee065c266b701972922d807228120e43f311d79d75becd6edc85fab857ffeb67b5d4a3af369d6160bab12053d9fd03a1ffc2abfa4f6f9d822b41d76943f7b0301525499e8181c2f4348f6017428785d932",
     "binding_factors": [
       {
         "identifier": 1,
-        "rho": "db4118a3fb7b0716448350948e072ec224411db21072e4a9f4063e2b32add165"
+        "rho": "3206a2ba2b520e9d546617d11a99a417cb3d926bed0988f11668feea1e8d1fb9"
       },
       {
         "identifier": 2,
-        "rho": "294da15780c97059c94d5b6397a789a9cd885e7e39d08b3d887140f5edfb9803"
+        "rho": "f5b5e14cb67ff86c1f31c7fcce1d1790ac24424b503c61aea757f3a066389d13"
       }
     ],
     "lagrange_coefficients": [
@@ -91,8 +91,8 @@
         "lambda": "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140"
       }
     ],
-    "group_commitment": "02b6f689338e4823b83ba7405017aab35de85e5fcf7e895b2db6c17bc28254e974",
-    "challenge": "eca43297edcfc505162d825d02a3696199dc36fe170a7158b3de33da7bb8eadd"
+    "group_commitment": "0326145d218761f87fee96b23393326eab92ac38586bc5ee2fe5072baef97b1a69",
+    "challenge": "1bab2af296902b241e2e9279079601715fe75203cb672bab446734b5a647f807"
   },
   "final_output": {
     "sig": "26145d218761f87fee96b23393326eab92ac38586bc5ee2fe5072baef97b1a6925afacc208c6e09afcb9a4fcfc807808560cdc93f555b1f9ec984a65d851e6ec"

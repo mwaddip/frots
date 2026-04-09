@@ -9,7 +9,7 @@ use frost_core::{
 };
 use frost_secp256k1_tr::{
     self as frost_tr,
-    keys::{dkg, IdentifierList, KeyPackage, PublicKeyPackage},
+    keys::{dkg, EvenY, IdentifierList, KeyPackage, PublicKeyPackage},
     round1, round2, Field, Group, Identifier, Secp256K1Group, Secp256K1Sha256TR, SigningPackage,
 };
 use rand_chacha::ChaCha20Rng;
@@ -23,17 +23,35 @@ use crate::recording_rng::RecordingRng;
 /// helpers on `frost-core` plus the ciphersuite trait method `challenge`
 /// (which is the `-tr` x-only override). Mirrors the order of operations in
 /// `frost-core/src/round2.rs::sign`.
+///
+/// **Critical:** the helpers below operate on the **post-pre_sign**
+/// verifying key, NOT the raw aggregate. Per `frost-core/src/round2.rs:145-170`,
+/// `round2::sign` calls `pre_sign` first (which `into_even_y`-normalizes the
+/// KeyPackage) and then passes `key_package.verifying_key` (the normalized
+/// one) to `compute_binding_factor_list` and `Ciphersuite::challenge`. For
+/// dealer fixtures the raw aggregate has odd y in our test seeds, so the
+/// raw and normalized verifying keys differ — and the binding factor preimage
+/// (which embeds the FULL 33-byte SEC1 vk encoding) would diverge between
+/// "what the helper called with raw vk produces" vs. "what real signing
+/// actually uses." Capturing the post-pre_sign view here is the only way
+/// to expose intermediates that align with the recorded `sig_share`.
 #[allow(non_snake_case)]
 fn capture_signing_intermediates(
     signing_package: &SigningPackage,
     pub_key_package: &PublicKeyPackage,
 ) -> SigningIntermediates {
+    // Apply pre_sign's normalization to the public key package up front. From
+    // here on every helper takes the *operative* (post-pre_sign) verifying
+    // key, which is what real signing uses.
+    let normalized_pkp = pub_key_package.clone().into_even_y(None);
+    let operative_vk = normalized_pkp.verifying_key();
+
     // 1. Binding factor input prefix: vk.serialize() || H4(msg) || H5(encoded_commits).
     //    `binding_factor_preimages` returns the FULL per-signer preimages, each of
     //    which is `prefix || identifier_serialized`. To recover the prefix we slice
     //    one preimage and drop its trailing 32-byte identifier.
     let preimages = signing_package
-        .binding_factor_preimages(pub_key_package.verifying_key(), &[])
+        .binding_factor_preimages(operative_vk, &[])
         .expect("binding_factor_preimages");
     let first_preimage = &preimages.first().expect("at least one signer").1;
     let prefix_len = first_preimage.len() - 32;
@@ -42,7 +60,7 @@ fn capture_signing_intermediates(
 
     // 2. Per-signer binding factors via the internals helper.
     let binding_factor_list =
-        compute_binding_factor_list::<Secp256K1Sha256TR>(signing_package, pub_key_package.verifying_key(), &[])
+        compute_binding_factor_list::<Secp256K1Sha256TR>(signing_package, operative_vk, &[])
             .expect("compute_binding_factor_list");
     let mut binding_factors: Vec<BindingFactorEntry> = signing_package
         .signing_commitments()
@@ -84,9 +102,12 @@ fn capture_signing_intermediates(
     );
 
     // 5. H2 challenge — uses the `-tr` x-only override on Ciphersuite::challenge.
+    //    x-only is invariant under negation, so the challenge value is the same
+    //    whether we pass the raw or normalized vk. Pass the operative one for
+    //    consistency with the rest of this function.
     let challenge_value = <Secp256K1Sha256TR as Ciphersuite>::challenge(
         &group_commitment_value.to_element(),
-        pub_key_package.verifying_key(),
+        operative_vk,
         signing_package.message(),
     )
     .expect("Ciphersuite::challenge");

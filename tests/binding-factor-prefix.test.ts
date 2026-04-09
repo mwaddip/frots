@@ -34,6 +34,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { secp256k1 } from '@noble/curves/secp256k1.js';
 import {
   ALL_FIXTURE_NAMES,
   bytesToHex,
@@ -42,7 +43,10 @@ import {
   loadDkgFixture,
   type RoundOneOutput,
 } from '../src/index.ts';
+import { intoEvenY } from '../src/point.ts';
 import { bindingFactorInputPrefix, type SigningCommitment } from '../src/sign.ts';
+
+const Point = secp256k1.Point;
 
 interface Loaded {
   verifyingKey: Uint8Array;
@@ -63,8 +67,15 @@ function loadCommitments(name: string): Loaded {
   );
   // Match Rust's BTreeMap iteration order: ascending by identifier
   commitments.sort((a, b) => a.identifier - b.identifier);
+  // Apply pre_sign even-y normalization. The Rust signing flow does this
+  // BEFORE compute_binding_factor_list, so the verifying key embedded in the
+  // binding factor preimage is the operative (post-into_even_y) one. For
+  // dealer fixtures whose raw aggregate vk has odd y, this differs from the
+  // raw bytes — and the captured `binding_factor_input_prefix` reflects the
+  // operative view.
+  const vkPoint = Point.fromBytes(hexToBytes(fx.inputs.verifying_key_key));
   return {
-    verifyingKey: hexToBytes(fx.inputs.verifying_key_key),
+    verifyingKey: intoEvenY(vkPoint).toBytes(true),
     message: hexToBytes(fx.inputs.message),
     commitments,
     expectedPrefix: hexToBytes(fx.signing_intermediates.binding_factor_input_prefix),
