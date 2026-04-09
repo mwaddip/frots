@@ -12,14 +12,88 @@
  * and the `-tr` overrides in `frost-secp256k1-tr/src/lib.rs:382-416`.
  */
 
-import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { schnorr, secp256k1 } from '@noble/curves/secp256k1.js';
 
-import { H1, H2, H4, H5 } from './hash.ts';
-import { hasEvenY, intoEvenY } from './point.ts';
+import { H1, H2, H3, H4, H5 } from './hash.ts';
+import type { KeyPackage, PublicKeyPackage } from './keys.ts';
+import { deriveInterpolatingValue } from './lagrange.ts';
+import { hasEvenY, intoEvenY, scalarBaseMul } from './point.ts';
 
 const Fn = secp256k1.Point.Fn;
 
 type Point = typeof secp256k1.Point.BASE;
+
+/**
+ * Structural interface for an RNG that hands back random bytes a buffer at
+ * a time. Mirrors Rust's `RngCore::fill_bytes(dest: &mut [u8])`. The
+ * `FixtureRng` shim in `src/rng-replay.ts` satisfies this interface — and
+ * for production use, a thin adapter over `crypto.getRandomValues` does
+ * too. Decoupling the public API from any particular RNG implementation
+ * is what lets the same code run under deterministic byte-for-byte tests
+ * AND under real entropy.
+ *
+ * The single-method shape is deliberate: every Rust call into `RngCore`
+ * that this port currently mirrors is a `fill_bytes` call. If a later
+ * primitive ever needs another RNG operation (e.g., a single u32),
+ * extend this interface — don't add a wrapper.
+ */
+export interface Rng {
+  fillBytes(dest: Uint8Array): void;
+}
+
+/**
+ * One signer's round-1 secret nonces — the local material that MUST stay
+ * private until round 2's signature share is computed. Mirrors
+ * `frost::round1::SigningNonces` (`frost-core/src/round1.rs:130-138`).
+ *
+ * - `hidingNonce` is `d_i`, the per-session hiding nonce, derived from
+ *   `H3(random_bytes(32) || signing_share.serialize()(32))` per
+ *   `frost-core/src/round1.rs:77-90`.
+ * - `bindingNonce` is `e_i`, derived the same way from a fresh 32-byte
+ *   random block.
+ *
+ * Both are raw scalars (`bigint`, mod n). The matching public commitments
+ * `D_i = d_i · G` / `E_i = e_i · G` live on the paired `SigningCommitment`
+ * returned by `signRound1`.
+ */
+export interface SigningNonces {
+  readonly hidingNonce: bigint;
+  readonly bindingNonce: bigint;
+}
+
+/**
+ * Output of `signRound1` — the per-signer pair of (private nonces, public
+ * commitments) that the round-1 commit phase produces. Mirrors the Rust
+ * `(SigningNonces, SigningCommitments)` tuple returned by
+ * `frost::round1::commit`, expressed as a named-field object for
+ * call-site readability.
+ */
+export interface Round1Output {
+  /** Private — keep on the signer until round 2. */
+  readonly nonces: SigningNonces;
+  /** Public — broadcast to the coordinator (and from there to all signers). */
+  readonly commitments: SigningCommitment;
+}
+
+/**
+ * One signer's contribution to the joint signature, produced by round 2.
+ * Mirrors `frost::round2::SignatureShare` (`frost-core/src/round2.rs:54-62`).
+ *
+ * - `identifier` is the producing signer's u16 identifier (matches the
+ *   wire-level convention on `SigningCommitment`). Lets the coordinator
+ *   route shares back to signers without an out-of-band map.
+ * - `share` is the `z_i` scalar — the per-signer contribution to the
+ *   joint Schnorr `z`, satisfying:
+ *
+ *       z = Σ_i  z_i  =  Σ_i  ( d_i + (e_i · ρ_i) + (λ_i · s_i · c) )
+ *
+ *   pre BIP340 parity normalization on both the signing share and the
+ *   nonces (handled inside `signRound2` per the type-wrapper convention).
+ */
+export interface SignatureShare {
+  readonly identifier: number;
+  readonly share: bigint;
+}
 
 /**
  * One signer's round-1 commitment pair: their hiding nonce commitment `D_i`
@@ -379,4 +453,270 @@ export function aggregate(
   out.set(rX, 0);
   out.set(zBytes, 32);
   return out;
+}
+
+/**
+ * `deriveNonce` — internal helper. One H3-based nonce derivation, matching
+ * `frost-core/src/round1.rs:77-90`'s `nonce_generate_from_random_bytes`:
+ *
+ *     nonce = H3(random_bytes(32) || signing_share.serialize()(32))
+ *
+ * Reads exactly 32 bytes from `rng`, concatenates with the 32-byte BE
+ * scalar encoding of the signing share, and feeds the 64-byte preimage to
+ * H3. The order is **random first, secret second** — verified by the H3
+ * test surface in `tests/h3.test.ts` against the recorded
+ * `hiding_nonce_randomness` / `binding_nonce_randomness` fields in every
+ * dealer fixture.
+ *
+ * Per `RUST_REFERENCE_NOTES.md` §6.1: this is the FROST round-1 commit
+ * path, which is a *direct* H3 call with **no parity dance**. The
+ * `Ciphersuite::generate_nonce` override (with its `(k, R)` negation on
+ * odd y) belongs to the synchronous `single_sign` path and is NOT
+ * reachable from `round1::commit`.
+ */
+function deriveNonce(rng: Rng, signingShare: bigint): bigint {
+  const randomness = new Uint8Array(32);
+  rng.fillBytes(randomness);
+  const shareBytes = Fn.toBytes(signingShare);
+  const preimage = new Uint8Array(64);
+  preimage.set(randomness, 0);
+  preimage.set(shareBytes, 32);
+  return H3(preimage);
+}
+
+/**
+ * `signRound1` — the per-signer round-1 commit primitive. Wraps
+ * `frost::round1::commit` (`frost-core/src/round1.rs:175-187`):
+ *
+ *     let nonces       = SigningNonces::new(signing_share, rng);
+ *     let commitments  = SigningCommitments::from(&nonces);
+ *     return (nonces, commitments);
+ *
+ * Two H3-based nonce derivations (hiding then binding, in that order),
+ * each consuming exactly 32 bytes from `rng`. The matching public
+ * commitments are `D_i = d_i · G` and `E_i = e_i · G`, both 33-byte SEC1
+ * compressed.
+ *
+ * The RNG byte ordering (hiding first, binding second) matches Rust's
+ * `SigningNonces::new` (`frost-core/src/round1.rs:140-146`), which is
+ * what every dealer fixture's `rng_log` records. End-to-end tests built
+ * on `FixtureRng` therefore replay byte-for-byte once the signing phase
+ * is reached.
+ *
+ * Takes a **raw** `KeyPackage` per the type-wrapper convention. Round 1
+ * does not need any verifying-key normalization — `pre_sign`'s parity
+ * dance only kicks in at round 2 (`signRound2`).
+ *
+ * Returns `Round1Output` with the secret `nonces` (kept on the signer)
+ * and the public `commitments` (broadcast to the coordinator). Mirrors
+ * the Rust `(SigningNonces, SigningCommitments)` tuple, named for clarity.
+ */
+export function signRound1(keyPackage: KeyPackage, rng: Rng): Round1Output {
+  const hidingNonce = deriveNonce(rng, keyPackage.signingShare);
+  const bindingNonce = deriveNonce(rng, keyPackage.signingShare);
+
+  const D = scalarBaseMul(hidingNonce);
+  const E = scalarBaseMul(bindingNonce);
+
+  return {
+    nonces: { hidingNonce, bindingNonce },
+    commitments: {
+      identifier: Number(keyPackage.identifier),
+      hiding: D.toBytes(true),
+      binding: E.toBytes(true),
+    },
+  };
+}
+
+/**
+ * `signRound2` — the per-signer round-2 partial signing primitive. Wraps
+ * `frost::round2::sign` (`frost-core/src/round2.rs:99-170`) including the
+ * `-tr` ciphersuite's `pre_sign` even-y normalization.
+ *
+ * Composition (in order):
+ *
+ *   1. **`pre_sign` normalization on the verifying key.** The raw
+ *      `keyPackage.verifyingKey` is parsed and normalized via `intoEvenY`
+ *      to produce the operative vk. The corresponding `pre_sign`
+ *      normalization on the signing share is folded into
+ *      `computeSignatureShare`'s parity dance below — we hand it the RAW
+ *      vk (as a `Point`), not the operative one, because that helper
+ *      already runs `hasEvenY(verifyingKey) ? s : -s` itself.
+ *   2. **Sort `allCommitments` by identifier.** Mirrors the Rust
+ *      `BTreeMap<Identifier, _>` iteration order. Default identifiers
+ *      sort by ascending u16, which is what every fixture records.
+ *   3. **`computeBindingFactorList`** — H1 over (operative vk || H4(msg)
+ *      || H5(encode_commitments) || identifier_BE_32) per signer.
+ *   4. **`computeGroupCommitment`** — `R = Σ (D_i + ρ_i · E_i)`,
+ *      pre-parity. The downstream `computeSignatureShare` will negate
+ *      the local nonces if `R.y` is odd.
+ *   5. **`challenge`** — `c = H2(R.x || vk.x || msg)`, the BIP340 x-only
+ *      preimage. The vk parity does not matter here because only the
+ *      x-coordinate is hashed; we pass the operative vk for consistency.
+ *   6. **`deriveInterpolatingValue`** — `λ_i` for the local signer over
+ *      the signing set extracted from `allCommitments`.
+ *   7. **`computeSignatureShare`** — runs the parity dance on signing
+ *      share + nonces, then computes `z_i = d + (e·ρ) + (λ·s·c)`.
+ *
+ * Takes a **raw** `KeyPackage` per the type-wrapper convention. The
+ * caller doesn't need to know about BIP340 parity — `pre_sign` is
+ * applied internally.
+ *
+ * Throws if the local signer's identifier is missing from
+ * `allCommitments` (a structural mismatch the coordinator must fix).
+ *
+ * Validated by `tests/sign-round2.test.ts`, which drives this against the
+ * same fixture data as `tests/signature-share.test.ts` but through the
+ * high-level public API.
+ */
+export function signRound2(
+  keyPackage: KeyPackage,
+  nonces: SigningNonces,
+  message: Uint8Array,
+  allCommitments: readonly SigningCommitment[],
+): SignatureShare {
+  // 1. Parse the raw verifying key. operativeVk is used for hashing into
+  //    the binding factor preimage and the challenge; vkPoint (raw) is
+  //    handed to computeSignatureShare which runs its own parity dance.
+  const vkPoint = secp256k1.Point.fromBytes(keyPackage.verifyingKey);
+  const operativeVkPoint = intoEvenY(vkPoint);
+  const operativeVkBytes = operativeVkPoint.toBytes(true);
+
+  // 2. Sort by identifier — matches Rust's BTreeMap iteration order.
+  //    Sorting in place would mutate the caller's input; copy first.
+  const sortedCommitments: SigningCommitment[] = [...allCommitments].sort(
+    (a, b) => a.identifier - b.identifier,
+  );
+
+  // 3. Per-signer binding factors ρ_i = H1(prefix || identifier_BE_32).
+  const bindingFactors = computeBindingFactorList(operativeVkBytes, message, sortedCommitments);
+
+  // 4. Aggregate group commitment R = Σ (D_i + ρ_i · E_i).
+  const R = computeGroupCommitment(sortedCommitments, bindingFactors);
+
+  // 5. Schnorr challenge c = H2(R.x || vk.x || message).
+  const c = challenge(R, operativeVkPoint, message);
+
+  // 6. Lagrange coefficient λ_i over the signer set.
+  const signerSet = sortedCommitments.map((sc) => BigInt(sc.identifier));
+  const lambda = deriveInterpolatingValue(signerSet, keyPackage.identifier);
+
+  // 7. The local signer's binding factor.
+  const localId = Number(keyPackage.identifier);
+  const rho = bindingFactors.get(localId);
+  if (rho === undefined) {
+    throw new Error(
+      `signRound2: local signer ${localId} is not present in allCommitments — ` +
+        `the coordinator must include this signer's round-1 commitment before round 2`,
+    );
+  }
+
+  // 8. Compute the signature share. computeSignatureShare receives the
+  //    RAW vk Point and runs its own pre_sign parity dance internally.
+  const z = computeSignatureShare({
+    groupCommitment: R,
+    verifyingKey: vkPoint,
+    hidingNonce: nonces.hidingNonce,
+    bindingNonce: nonces.bindingNonce,
+    signingShare: keyPackage.signingShare,
+    bindingFactor: rho,
+    lagrange: lambda,
+    challenge: c,
+  });
+
+  return { identifier: localId, share: z };
+}
+
+/**
+ * `verifySignature` — public-side BIP340 verification of a 64-byte
+ * compact Schnorr signature against a 33-byte SEC1 verifying key.
+ * Wraps `noble.schnorr.verify` with the FROST-tr parity convention:
+ * the input verifying key may be RAW (odd y), and the helper normalizes
+ * to the operative even-y form before extracting the 32-byte x-only
+ * coordinate that BIP340 verification requires.
+ *
+ * Per `RUST_REFERENCE_NOTES.md` §10, noble's `schnorr.verify` is the
+ * matching primitive — same SHA256-tagged challenge construction, same
+ * x-only public key encoding. The internal pre-verify normalization is
+ * how `frost-secp256k1-tr/src/lib.rs:350-362`'s `pre_verify` ciphersuite
+ * override interoperates with vanilla BIP340 verifiers.
+ *
+ * Returns a boolean rather than throwing — callers like `signAggregate`
+ * decide whether a verification failure is fatal.
+ */
+export function verifySignature(
+  signature: Uint8Array,
+  message: Uint8Array,
+  rawVerifyingKey: Uint8Array,
+): boolean {
+  const vkPoint = secp256k1.Point.fromBytes(rawVerifyingKey);
+  const operativeVk = intoEvenY(vkPoint);
+  // Strip the 0x02 SEC1 prefix to get the 32-byte x-only encoding.
+  const vkXOnly = operativeVk.toBytes(true).slice(1);
+  return schnorr.verify(signature, message, vkXOnly);
+}
+
+/**
+ * `signAggregate` — coordinator-side primitive that combines per-signer
+ * `SignatureShare`s into the final 64-byte BIP340 signature **and verifies
+ * it against the public key**.
+ *
+ * Wraps the existing low-level `aggregate` (Step 3 primitive #17) and
+ * adds the BIP340 verification pass per the Step 4 design checkpoint
+ * (Q1 = bundle-verify-into-aggregate). The verification step matches
+ * Rust's `aggregate` default behavior in `frost-core/src/lib.rs:678-685`,
+ * which validates the produced signature before returning it. The
+ * cheater-detection retry path (per-share verification when the
+ * aggregate fails) is NOT implemented in this commit — see PLAN.md
+ * Step 4 follow-ups.
+ *
+ * Throws (rather than returning a `Result`) on:
+ * - structural mismatch: a signer in `commitments` lacks a matching
+ *   `SignatureShare` (or vice versa)
+ * - verification failure: the assembled signature does not validate
+ *   against `publicKeyPackage.verifyingKey`
+ *
+ * Takes a **raw** `PublicKeyPackage` per the type-wrapper convention.
+ * Internal aggregation calls the existing low-level `aggregate` which
+ * applies `pre_aggregate` parity normalization.
+ *
+ * The `publicKeyPackage.verifyingShares` field is currently unused — it
+ * is reserved for the future cheater-detection retry path (which iterates
+ * `verify_share` per signer to identify the culprit when aggregation
+ * fails).
+ */
+export function signAggregate(
+  signatureShares: readonly SignatureShare[],
+  message: Uint8Array,
+  commitments: readonly SigningCommitment[],
+  publicKeyPackage: PublicKeyPackage,
+): Uint8Array {
+  // Build the Map<number, bigint> the low-level aggregate expects.
+  const sharesMap = new Map<number, bigint>();
+  for (const ss of signatureShares) {
+    sharesMap.set(ss.identifier, ss.share);
+  }
+
+  // Sort commitments to match the binding-factor list iteration order.
+  const sortedCommitments: SigningCommitment[] = [...commitments].sort(
+    (a, b) => a.identifier - b.identifier,
+  );
+
+  const sig = aggregate(
+    sortedCommitments,
+    message,
+    publicKeyPackage.verifyingKey,
+    sharesMap,
+  );
+
+  if (!verifySignature(sig, message, publicKeyPackage.verifyingKey)) {
+    throw new Error(
+      'signAggregate: assembled signature failed BIP340 verification — ' +
+        'one or more signers may have submitted a bad share, or the signing set ' +
+        'is inconsistent with the PublicKeyPackage. Cheater-detection retry is ' +
+        'not yet implemented; inspect signature shares manually to identify the culprit.',
+    );
+  }
+
+  return sig;
 }
