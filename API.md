@@ -4,10 +4,10 @@
 
 ```ts
 // Default (secp256k1 + BIP340/BIP341 Taproot):
-import { dkgRound1, signRound1, ... } from 'frots';
+import { dkgRound1, signRound1, ... } from '@mwaddip/frots';
 
 // Explicit ciphersuite:
-import { dkgRound1, signRound1, ... } from 'frots/secp256k1-tr';
+import { dkgRound1, signRound1, ... } from '@mwaddip/frots/secp256k1-tr';
 ```
 
 Both entry points export the same API.

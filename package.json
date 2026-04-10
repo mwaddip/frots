@@ -1,5 +1,5 @@
 {
-  "name": "frots",
+  "name": "@mwaddip/frots",
   "version": "0.1.0",
   "type": "module",
   "description": "Pure-TypeScript port of FROST (RFC 9591) for secp256k1 + BIP340/BIP341 Taproot, validated byte-for-byte against Zcash Foundation's audited frost-secp256k1-tr Rust crate.",

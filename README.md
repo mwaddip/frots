@@ -13,7 +13,7 @@ The `frost-secp256k1-tr` crate is part of the Zcash Foundation's FROST library, 
 ## Install
 
 ```bash
-npm install frots
+npm install @mwaddip/frots
 ```
 
 ## Quick Start
@@ -29,7 +29,7 @@ import {
   signRound2,
   signAggregate,
   type Rng,
-} from 'frots';
+} from '@mwaddip/frots';
 
 const rng: Rng = {
   fillBytes: (dest) => crypto.getRandomValues(dest),
@@ -97,7 +97,7 @@ verifySignature(sig, message, publicKeyPackage.untweakedVerifyingKey); // true
 ### Dealer Flow (Trusted Dealer)
 
 ```ts
-import { finalizeKeygen, signRound1, signRound2, signAggregate } from 'frots';
+import { finalizeKeygen, signRound1, signRound2, signAggregate } from '@mwaddip/frots';
 
 // The dealer distributes SecretShares to each party.
 // Each party finalizes their KeyPackage:
