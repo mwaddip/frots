@@ -1,6 +1,6 @@
 {
   "name": "@mwaddip/frots",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Pure-TypeScript port of FROST (RFC 9591) for secp256k1 + BIP340/BIP341 Taproot, validated byte-for-byte against Zcash Foundation's audited frost-secp256k1-tr Rust crate.",
   "license": "MIT",
@@ -35,8 +35,8 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@noble/curves": "2.0.1",
-    "@noble/hashes": "2.0.1"
+    "@noble/curves": "2.2.0",
+    "@noble/hashes": "2.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
